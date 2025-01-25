@@ -1,0 +1,15 @@
+info("                                                 ");
+info("                                     68b         ");
+info("                                     Y89   /     ");
+info("___  __  ___   ___   __       __     ___  /M     ");
+info("`MM 6MMb `MM    MM  6MMbMMM  6MMbMMM `MM /MMMMM  ");
+info(" MMM9 `Mb MM    MM 6M'`Mb   6M'`Mb    MM  MM     ");
+info(" MM'   MM MM    MM MM  MM   MM  MM    MM  MM     ");
+info(" MM    MM MM    MM YM.,M9   YM.,M9    MM  MM     ");
+info(" MM    MM MM    MM  YMM9     YMM9     MM  MM     ");
+info(" MM    MM YM.   MM (M       (M        MM  YM.  , ");
+info("_MM_  _MM_ YMMM9MM_ YMMMMb.  YMMMMb. _MM_  YMMM9 ");
+info("                   6M    Yb 6M    Yb             ");
+info("                   YM.   d9 YM.   d9             ");
+info("                    YMMMM9   YMMMM9              ");
+info("                                                 ");

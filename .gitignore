@@ -1,0 +1,7 @@
+build/
+.vs/
+.xmake/
+.cache/
+vsxmake*/
+compile_commands.json
+.luarc.json

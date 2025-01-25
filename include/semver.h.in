@@ -1,0 +1,12 @@
+// clang-format off
+
+#ifndef NG_SEMVER_H
+#define NG_SEMVER_H
+
+${define BUILD_MAJOR}
+${define BUILD_MINOR}
+${define BUILD_NUMBER}
+
+#endif
+
+// clang-format on
