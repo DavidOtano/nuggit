@@ -445,12 +445,12 @@ void chat_server::notify_has_parted(
 }
 
 void chat_server::notify_redirect(const std::string& channelname) {
-    enqall(0x012D, "S", channelname);
+    enqall(0x0190, "S", channelname);
 }
 
 void chat_server::notify_exile(const std::unique_ptr<chat_user_context_t>& ctx,
                                const std::string& channelname) {
-    enq(ctx, 0x012D, "S", channelname);
+    enq(ctx, 0x0190, "S", channelname);
 }
 
 void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
