@@ -7,23 +7,98 @@
 #include <thread>
 #include "nuggit-config.h"
 #include "chat-server/chat-server.h"
+#include "nuggit-service.h"
 #include "peer/handshake.h"
 #include "peer/peer_types.h"
 
 using ng::logging::error, ng::logging::info;
 using namespace ng::wpn;
 
-bool ng_use_timestamps = true;
+typedef std::vector<std::shared_ptr<ng::ng_service>> ng_services;
 
 /* forward declarations */
 static std::string ng_version_string(void);
+bool configure_services(ng::nuggit_config_reader& config,
+                        ng_services& services);
+bool load_config(const std::string config_path,
+                 ng::nuggit_config_reader& config);
+bool ng_init(int argc, char** argv, std::string& config_path);
+int ng_run(const ng_services& services);
+
+bool ng_use_timestamps = true;
 
 int main(int argc, char** argv) {
-    using ng::string::utils::to_lower, ng::string::utils::trim;
-    bool no_logo = false;
-    std::vector<std::shared_ptr<ng::ng_service>> services;
-
     std::string config_path = "config.ini";
+    if (!ng_init(argc, argv, config_path)) {
+        return 0;
+    }
+
+    ng::nuggit_config_reader config;
+    if (!load_config(config_path, config)) {
+        return -1;
+    }
+
+    ng_services services;
+    if (!configure_services(config, services)) {
+        return -1;
+    }
+
+    return ng_run(services);
+}
+
+static std::string ng_version_string(void) {
+    return std::format("nuggit {}.{}.{}", BUILD_MAJOR, BUILD_MINOR,
+                       BUILD_NUMBER);
+}
+
+bool configure_services(ng::nuggit_config_reader& config,
+                        ng_services& services) {
+    auto server =
+        std::make_shared<peer::handshake_server>(std::chrono::seconds(5));
+    server->set_port(config.nuggit().tcp_port());
+    services.emplace_back(server);
+
+    if (config.nuggit().chat_server()) {
+        auto chat_server = std::make_shared<ng::wpn::chat::chat_server>(config);
+        chat_server->set_server_line(ng_version_string());
+
+        if (!chat_server->init()) {
+            return false;
+        }
+
+        services.emplace_back(chat_server);
+        server->add_receiver(NG_CHAT_SERVER, chat_server);
+    }
+
+    if (!server->init()) {
+        return false;
+    }
+
+    return true;
+}
+
+bool load_config(const std::string config_path,
+                 ng::nuggit_config_reader& config) {
+    try {
+        if (!config.load(config_path)) {
+            error("unable to load the config...");
+            return false;
+        }
+    } catch (std::runtime_error& e) {
+        auto what = e.what();
+        error("unable to load config: {}", what);
+        return false;
+    }
+
+    info("config loaded!");
+
+    return true;
+}
+
+bool ng_init(int argc, char** argv, std::string& config_path) {
+    using ng::string::utils::to_lower, ng::string::utils::trim;
+
+    bool no_logo = false;
     for (auto i = 0; i < argc; i++) {
         std::string arg = argv[i];
         arg = to_lower(trim(arg));
@@ -39,7 +114,7 @@ int main(int argc, char** argv) {
             continue;
         } else if (arg == "--version") {
             std::cout << ng_version_string() << "\n";
-            return 0;
+            return false;
         } else if (arg.starts_with("--log-level=")) {
             auto level = arg.substr(12);
             if (std::all_of(level.begin(), level.end(), isdigit)) {
@@ -62,42 +137,10 @@ int main(int argc, char** argv) {
         info(ng_version_string());
     }
 
-    ng::nuggit_config_reader config;
+    return true;
+}
 
-    try {
-        if (!config.load(config_path)) {
-            error("unable to load the config...");
-            return -1;
-        }
-    } catch (std::runtime_error& e) {
-        auto what = e.what();
-        error("unable to load config: {}", what);
-        return -1;
-    }
-    info("config loaded!");
-
-    const auto server =
-        std::make_shared<peer::handshake_server>(std::chrono::seconds(5));
-    server->set_port(config.nuggit().tcp_port());
-    services.push_back(server);
-
-    if (config.nuggit().chat_server()) {
-        const auto chat_server =
-            std::make_shared<ng::wpn::chat::chat_server>(config);
-        chat_server->set_server_line(ng_version_string());
-
-        if (!chat_server->init()) {
-            return -1;
-        }
-
-        services.push_back(chat_server);
-        server->add_receiver(NG_CHAT_SERVER, chat_server);
-    }
-
-    if (!server->init()) {
-        return -1;
-    }
-
+int ng_run(const ng_services& services) {
     while (true) {
         for (const auto& service : services) {
             if (!service->process()) {
@@ -109,9 +152,4 @@ int main(int argc, char** argv) {
     }
 
     return 0;
-}
-
-static std::string ng_version_string(void) {
-    return std::format("nuggit {}.{}.{}", BUILD_MAJOR, BUILD_MINOR,
-                       BUILD_NUMBER);
 }

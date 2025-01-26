@@ -125,7 +125,7 @@ bool chat_server::init() {
     return true;
 }
 
-bool send_and_receive_buffered_data(std::shared_ptr<chat_user_context_t>& ctx) {
+bool send_and_receive_buffered_data(std::unique_ptr<chat_user_context_t>& ctx) {
     static uint8_t buffer[MAX_RECEIVE_BUFFER_SZ] = {0};
 
     if (ctx->disconnect_after.is_set() && ctx->disconnect_after.has_elapsed()) {
@@ -200,7 +200,7 @@ bool send_and_receive_buffered_data(std::shared_ptr<chat_user_context_t>& ctx) {
 
 bool chat_server::process() {
     /* remove disconnected users */
-    std::erase_if(m_chat_users, [&](std::shared_ptr<chat_user_context_t>& ctx) {
+    std::erase_if(m_chat_users, [&](std::unique_ptr<chat_user_context_t>& ctx) {
         const auto remove = !send_and_receive_buffered_data(ctx);
         if (remove && ctx->status.logged_in) {
             notify_has_parted(ctx);
@@ -246,7 +246,7 @@ void chat_server::enqueue_all(
     enqueue_all(scratch_buffer, scratch_buffer.buffer_length_with_header());
 }
 
-void chat_server::enqueue(const std::shared_ptr<chat_user_context_t>& ctx,
+void chat_server::enqueue(const std::unique_ptr<chat_user_context_t>& ctx,
                           const uint8_t* buffer, uint16_t len) {
     uint8_t tmp_buffer[MAX_RECEIVE_BUFFER_SZ] = {0};
     memcpy(tmp_buffer, buffer, len);
@@ -256,7 +256,7 @@ void chat_server::enqueue(const std::shared_ptr<chat_user_context_t>& ctx,
 }
 
 void chat_server::enqueue(
-    const std::shared_ptr<chat_user_context_t>& ctx, uint16_t type,
+    const std::unique_ptr<chat_user_context_t>& ctx, uint16_t type,
     const std::function<void(packet_buffer_t& buffer)>& writer) {
     static packet_buffer_t scratch_buffer;
 
@@ -269,7 +269,7 @@ void chat_server::enqueue(
 }
 
 void chat_server::handle_packet(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     ctx->recv_buffer.reset_cursor();
 
     if (!logged_in(ctx)) {
@@ -309,7 +309,7 @@ void chat_server::handle_packet(
 
 bool chat_server::is_username_taken(
     const std::string& username,
-    const std::shared_ptr<chat_user_context_t>& exclude) const {
+    const std::unique_ptr<chat_user_context_t>& exclude) const {
     if (std::any_of(m_chat_users.begin(), m_chat_users.end(),
                     [&](const auto& user) {
                         if (user == exclude) {
@@ -331,11 +331,11 @@ bool chat_server::is_channelname_valid(const std::string& channelname) {
 }
 
 void chat_server::notify_topic(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     enq(ctx, 0x012C, "S", m_nuggit_config.chat_server().topic());
 }
 
-void chat_server::notify_motd(const std::shared_ptr<chat_user_context_t>& ctx) {
+void chat_server::notify_motd(const std::unique_ptr<chat_user_context_t>& ctx) {
     using ng::string::utils::replace;
     echo(ctx, " ");
     for (const auto& line : m_nuggit_config.chat_server().motd()) {
@@ -352,7 +352,7 @@ void chat_server::notify_motd(const std::shared_ptr<chat_user_context_t>& ctx) {
 }
 
 void chat_server::notify_chat_history(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     if (!m_nuggit_config.chat_server().show_chat_history() ||
         !m_chat_history.size()) {
         return;
@@ -384,7 +384,7 @@ void chat_server::notify_chat_history(
 }
 
 void chat_server::notify_userlist(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     for (const auto& user : m_chat_users) {
         if (!logged_in(user)) {
             continue;
@@ -396,7 +396,7 @@ void chat_server::notify_userlist(
     }
 }
 
-void chat_server::notify_join(const std::shared_ptr<chat_user_context_t>& ctx) {
+void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
     const auto formatted_join_string =
         std::format("\x0003\x0004{} \x0003\x0004({} {} files) has entered",
                     ctx->info.username,
@@ -421,7 +421,7 @@ void chat_server::notify_join(const std::shared_ptr<chat_user_context_t>& ctx) {
     }
 }
 
-void chat_server::notify_rename(const std::shared_ptr<chat_user_context_t>& ctx,
+void chat_server::notify_rename(const std::unique_ptr<chat_user_context_t>& ctx,
                                 const std::string& new_username,
                                 uint32_t new_pri_ip, uint16_t new_pri_port,
                                 uint16_t new_line_type, uint16_t new_files) {
@@ -431,7 +431,7 @@ void chat_server::notify_rename(const std::shared_ptr<chat_user_context_t>& ctx,
 }
 
 void chat_server::notify_has_parted(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     if (ctx->is_hidden) {
         return;
     }
@@ -448,12 +448,12 @@ void chat_server::notify_redirect(const std::string& channelname) {
     enqall(0x012D, "S", channelname);
 }
 
-void chat_server::notify_exile(const std::shared_ptr<chat_user_context_t>& ctx,
+void chat_server::notify_exile(const std::unique_ptr<chat_user_context_t>& ctx,
                                const std::string& channelname) {
     enq(ctx, 0x012D, "S", channelname);
 }
 
-void chat_server::handle_join(const std::shared_ptr<chat_user_context_t>& ctx) {
+void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
     enq(ctx, 0x0066, "B", 1);
 
     if (ctx->is353) {
@@ -513,7 +513,7 @@ void chat_server::handle_join(const std::shared_ptr<chat_user_context_t>& ctx) {
 }
 
 void chat_server::handle_message(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     using ng::string::utils::replace;
     ctx->recv_buffer.skip_header();
     std::string message;
@@ -565,7 +565,7 @@ void chat_server::handle_message(
 }
 
 void chat_server::handle_rename(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     ctx->recv_buffer.skip_header();
     std::string username;
     uint32_t pri = 0, files = 0;
@@ -599,7 +599,7 @@ void chat_server::handle_rename(
 }
 
 void chat_server::print_packet(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     std::stringstream ss;
     ss << std::hex;
 
@@ -612,7 +612,7 @@ void chat_server::print_packet(
 }
 
 void chat_server::handle_command(
-    const std::shared_ptr<chat_user_context_t>& ctx, const std::string& command,
+    const std::unique_ptr<chat_user_context_t>& ctx, const std::string& command,
     bool is_hidden) {
     static std::vector<std::string> ignored_commands = {
         "/me ",    "/action ",  "/login ",  "/forcelogin ",
@@ -694,7 +694,7 @@ void chat_server::handle_command(
 }
 
 void chat_server::handle_action_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command) || !check_access(ctx, "A")) {
         return;
@@ -720,7 +720,7 @@ void chat_server::handle_action_command(
 }
 
 void chat_server::handle_login_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command)) {
         return;
@@ -750,7 +750,7 @@ void chat_server::handle_login_command(
 }
 
 void chat_server::handle_kick_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command) || !check_access(ctx, "K")) {
         return;
@@ -770,7 +770,7 @@ void chat_server::handle_kick_command(
 }
 
 void chat_server::handle_ban_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command) || !check_access(ctx, "B")) {
         return;
@@ -814,7 +814,7 @@ void chat_server::handle_ban_command(
 }
 
 void chat_server::handle_kickban_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command) || !check_access(ctx, "KB")) {
         return;
@@ -842,7 +842,7 @@ void chat_server::handle_kickban_command(
 }
 
 void chat_server::handle_unban_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command) || !check_access(ctx, "U")) {
         return;
@@ -886,7 +886,7 @@ void chat_server::handle_unban_command(
 }
 
 void chat_server::handle_listbans_command(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     if (!check_access(ctx, "L")) {
         return;
     }
@@ -917,7 +917,7 @@ void chat_server::handle_listbans_command(
 }
 
 void chat_server::handle_clearbans_command(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     if (!check_access(ctx, "U")) {
         return;
     }
@@ -932,7 +932,7 @@ void chat_server::handle_clearbans_command(
 }
 
 void chat_server::handle_hide_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (!check_access(ctx, "h")) {
         return;
@@ -971,7 +971,7 @@ void chat_server::handle_hide_command(
 }
 
 void chat_server::handle_redirect_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (!check_access(ctx, "R")) {
         return;
@@ -986,7 +986,7 @@ void chat_server::handle_redirect_command(
 }
 
 void chat_server::handle_exile_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command) || !check_access(ctx, "e")) {
         return;
@@ -1021,7 +1021,7 @@ void chat_server::handle_exile_command(
 }
 
 void chat_server::handle_forcelogin_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command) || !check_access(ctx, "f")) {
         return;
@@ -1072,7 +1072,7 @@ void chat_server::handle_forcelogin_command(
 }
 
 void chat_server::handle_setaccess_command(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (is_invalid_command_input(ctx, command) || !check_access(ctx, "*")) {
         return;
@@ -1127,7 +1127,7 @@ constexpr std::string get_color_menu() {
 }
 
 void chat_server::handle_color_command(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     std::string color_menu = get_color_menu();
     std::stringstream ss(color_menu);
     std::string line;
@@ -1136,10 +1136,10 @@ void chat_server::handle_color_command(
     }
 }
 
-bool chat_server::check_access(const std::shared_ptr<chat_user_context_t>& ctx,
+bool chat_server::check_access(const std::unique_ptr<chat_user_context_t>& ctx,
                                const std::string& access) {
     if (std::any_of(access.begin(), access.end(),
-                    [ctx](const auto& c) { return !ctx->has_access(c); })) {
+                    [&](const auto& c) { return !ctx->has_access(c); })) {
         echo(ctx, "Insufficient access to perform this action.");
         return false;
     }
@@ -1157,7 +1157,7 @@ bool chat_server::check_capacity() {
 
 bool chat_server::find_user_by_partial_name(
     const std::string& partial_name,
-    const std::function<void(const std::shared_ptr<chat_user_context_t>& ctx)>&
+    const std::function<void(const std::unique_ptr<chat_user_context_t>& ctx)>&
         func) {
     for (const auto& user : m_chat_users) {
         if (!logged_in(user) ||
@@ -1185,7 +1185,7 @@ void chat_server::append_chat_history(const std::string& message) {
 }
 
 bool chat_server::is_invalid_command_input(
-    const std::shared_ptr<chat_user_context_t>& ctx,
+    const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
     if (command.length() == 0 ||
         std::all_of(command.begin(), command.end(), ::isspace)) {
@@ -1197,7 +1197,7 @@ bool chat_server::is_invalid_command_input(
 }
 
 bool chat_server::validate_user(
-    const std::shared_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx) {
     if (!is_username_valid(ctx->info.username)) {
         echo(ctx, "Login rejected. Username invalid.");
         return false;
@@ -1253,7 +1253,7 @@ bool chat_server::sanity_check(const std::string& str) {
 }
 
 void chat_server::interpolate_name(
-    const std::shared_ptr<chat_user_context_t>& ctx, std::string& str) {
+    const std::unique_ptr<chat_user_context_t>& ctx, std::string& str) {
     using ng::string::utils::replace;
 
     replace(str, "$NAME$", name9(ctx->info.username));

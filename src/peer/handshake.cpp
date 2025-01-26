@@ -104,7 +104,7 @@ void handshake_server::enqueue(SOCKET s) {
         return;
     }
 
-    auto context = std::make_shared<handshake_context_t>();
+    const auto& context = m_pending.emplace_back(std::make_unique<handshake_context_t>());
     context->timeout = m_timeout;
     context->s = sock;
     context->sent = 0;
@@ -112,15 +112,14 @@ void handshake_server::enqueue(SOCKET s) {
     context->remote = 0;
     context->local = 0;
     context->ip = sock.remote_ip();
-    m_pending.push_back(context);
     info("{} -> initiating handshake...", context->ip);
 }
 
 bool handshake_server::process_internal(
-    std::shared_ptr<handshake_context_t>& context) {
+    const std::unique_ptr<handshake_context_t>& context) {
     static char hdr = 0x31;
 
-    auto close_and_exit = [context](const std::string& message) {
+    auto close_and_exit = [&](const std::string& message) {
         error("({}) handshake failed. {}: {}", context->ip, message,
               get_error_message(WSAGetLastError()));
         context->s.close();

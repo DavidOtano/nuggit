@@ -33,7 +33,8 @@ struct handshake_context_t {
 
 class peer_receiver {
 public:
-    virtual void accept(std::shared_ptr<handshake_context_t> context) = 0;
+    virtual void accept(
+        const std::unique_ptr<handshake_context_t>& context) = 0;
 };
 
 class handshake_server : public ng_service {
@@ -48,12 +49,12 @@ public:
 
 private:
     void enqueue(SOCKET s);
-    bool process_internal(std::shared_ptr<handshake_context_t>& context);
+    bool process_internal(const std::unique_ptr<handshake_context_t>& context);
     uint16_t m_port = NG_HANDSHAKE_SERVER_DEFAULT_PORT;
     std::chrono::seconds m_timeout;
     std::map<uint16_t, std::shared_ptr<peer_receiver>> m_receivers;
     net::tcp_socket m_socket;
-    std::vector<std::shared_ptr<handshake_context_t>> m_pending = {};
+    std::vector<std::unique_ptr<handshake_context_t>> m_pending = {};
 };
 
 }  // namespace ng::wpn::peer

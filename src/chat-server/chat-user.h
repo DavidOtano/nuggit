@@ -99,9 +99,9 @@ struct chat_user_context_t {
         return has_access('@') ? 1 : has_access('+') ? 2 : 0;
     }
 
-    static std::shared_ptr<chat_user_context_t> from_handshake(
-        std::shared_ptr<peer::handshake_context_t>& context) {
-        auto ret = std::make_shared<chat_user_context_t>(context->s);
+    static std::unique_ptr<chat_user_context_t> from_handshake(
+        const std::unique_ptr<peer::handshake_context_t>& context) {
+        auto ret = std::make_unique<chat_user_context_t>(context->s);
         ret->keys.up = context->up_key;
         ret->keys.down = context->down_key;
         ret->ip = context->ip;
