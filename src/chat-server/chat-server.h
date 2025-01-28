@@ -25,15 +25,11 @@ public:
         const std::unique_ptr<peer::handshake_context_t>& ctx) override {
         m_chat_users.emplace_back(chat_user_context_t::from_handshake(ctx));
     }
-    void set_server_line(const std::string& server_line) {
-        m_server_line = server_line;
-    }
     ~chat_server();
 
 protected:
     nuggit_config_reader& m_nuggit_config;
     std::vector<std::unique_ptr<chat_user_context_t>> m_chat_users;
-    std::string m_server_line;
     ban_control m_ban_control;
     std::vector<std::string> m_chat_history;
 
@@ -64,10 +60,14 @@ protected:
     void notify_redirect(const std::string& channelname);
     void notify_exile(const std::unique_ptr<chat_user_context_t>& ctx,
                       const std::string& channelname);
+    void notify_join_request_accepted(
+        const std::unique_ptr<chat_user_context_t>& ctx);
 
     void handle_packet(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_ipsend(const std::unique_ptr<chat_user_context_t>& ctx);
     void handle_join(const std::unique_ptr<chat_user_context_t>& ctx);
-    void handle_message(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_message(const std::unique_ptr<chat_user_context_t>& ctx,
+                        const std::string& msg = "");
     void handle_rename(const std::unique_ptr<chat_user_context_t>& ctx);
 
     void print_packet(const std::unique_ptr<chat_user_context_t>& ctx);
@@ -102,7 +102,18 @@ protected:
     void handle_setaccess_command(
         const std::unique_ptr<chat_user_context_t>& ctx,
         const std::string& command);
+    void handle_setformat_command(
+        const std::unique_ptr<chat_user_context_t>& ctx,
+        const std::string& command);
     void handle_color_command(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_opmsg_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                              const std::string& command);
+    void handle_notice_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                               const std::string& command);
+    void handle_gnotice_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                                const std::string& command);
+    void handle_message_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                                const std::string& command);
 
     bool check_access(const std::unique_ptr<chat_user_context_t>& ctx,
                       const std::string& access);
@@ -121,6 +132,9 @@ protected:
     static bool sanity_check(const std::string& str);
     static void interpolate_name(
         const std::unique_ptr<chat_user_context_t>& ctx, std::string& str);
+    static const packet_buffer_t& write_packet(
+        uint16_t type,
+        const std::function<void(packet_buffer_t& buffer)>& writer);
 };
 
 }  // namespace ng::wpn::chat

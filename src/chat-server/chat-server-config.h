@@ -28,6 +28,19 @@ public:
     const std::string& chat_history_footer() const {
         return m_chat_history_footer;
     }
+    bool fancy_entry() const { return m_fancy_entry; }
+    const std::string& fancy_entry_message() const {
+        return m_fancy_entry_message;
+    }
+    const std::string& fancy_entry_message_ip() const {
+        return m_fancy_entry_message_ip;
+    }
+    const std::string& private_message_recv_format() const {
+        return m_private_message_recv_format;
+    }
+    const std::string& private_message_send_format() const {
+        return m_private_message_send_format;
+    }
 
 private:
     std::vector<std::string> m_channelnames;
@@ -37,6 +50,11 @@ private:
     bool m_show_chat_history;
     std::string m_chat_history_header;
     std::string m_chat_history_footer;
+    bool m_fancy_entry;
+    std::string m_fancy_entry_message;
+    std::string m_fancy_entry_message_ip;
+    std::string m_private_message_recv_format;
+    std::string m_private_message_send_format;
 };
 
 class chat_server_login_section : public section_parser {

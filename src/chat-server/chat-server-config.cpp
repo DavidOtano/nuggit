@@ -18,6 +18,16 @@ void ng::config::chat_server::chat_server_section::parse(
         m_chat_history_header = value;
     } else if (key == "ChatHistoryFooter") {
         m_chat_history_footer = value;
+    } else if (key == "FancyEntry") {
+        m_fancy_entry = get_bool_from_string_value(value);
+    } else if (key == "FancyEntryMessage") {
+        m_fancy_entry_message = value;
+    } else if (key == "FancyEntryMessageIP") {
+        m_fancy_entry_message_ip = value;
+    } else if (key == "PrivateMessageRecvFormat") {
+        m_private_message_recv_format = value;
+    } else if (key == "PrivateMessageSendFormat") {
+        m_private_message_send_format = value;
     } else {
         throw ini_parser_exception(std::format("invalid server key '{}'", key));
     }

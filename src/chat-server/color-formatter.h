@@ -94,7 +94,7 @@ using namespace ng::utils;
 #include "available_colors.inc"
     };
 
-    for (unsigned int i = 0; i < sizeof available_colors; ++i) {
+    for (size_t i = 0; i < sizeof available_colors; ++i) {
         result += COL(available_colors[i]);
         result += std::format("#c{}#  ", (int)available_colors[i]);
         if (i % AVAILABLE_COLOR_COLUMNS == AVAILABLE_COLOR_COLUMNS - 1) {

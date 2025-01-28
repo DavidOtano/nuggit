@@ -60,7 +60,6 @@ bool configure_services(ng::nuggit_config_reader& config,
 
     if (config.nuggit().chat_server()) {
         auto chat_server = std::make_shared<ng::wpn::chat::chat_server>(config);
-        chat_server->set_server_line(ng_version_string());
 
         if (!chat_server->init()) {
             return false;

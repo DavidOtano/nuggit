@@ -238,7 +238,9 @@ public:
      * retrieves the length of the first packet in the buffer.
      */
     uint16_t length() const {
-        if (m_len < 4) return 0;
+        if (m_len < 4) {
+            return 0;
+        }
         return u16(*reinterpret_cast<const uint16_t*>((m_buffer.data() + 2)));
     }
 
@@ -297,6 +299,27 @@ public:
         size_probe(len + 1);
         std::memcpy(m_buffer.data() + m_len, buffer, len);
         m_len += len;
+    }
+
+    /**
+     * copies a buffer at the cursor offset
+     */
+    void insert_at_cursor(const packet_buffer_t& buffer) {
+        const auto len = buffer.buffer_length_with_header();
+        size_probe(len + 5);
+        std::memcpy(m_buffer.data() + m_cur, buffer.m_buffer.data(), len);
+        m_len += len;
+        m_cur += len;
+    }
+
+    /**
+     * copies a buffer at the cursor offset
+     */
+    void insert_at_cursor(uint8_t* buffer, int len) {
+        size_probe(len + 5);
+        std::memcpy(m_buffer.data() + m_cur, buffer, len);
+        m_len += len;
+        m_cur += len;
     }
 
     /**

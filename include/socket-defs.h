@@ -23,6 +23,9 @@
 #define WSAEWOULDBLOCK EWOULDBLOCK
 #define SOCKADDR_IN struct sockaddr_in
 #define WSAGetLastError() errno
+#ifndef NI_MAXHOST
+#define NI_MAXHOST 1024
+#endif
 #else
 #include <ws2tcpip.h>
 #include <winsock2.h>
@@ -64,6 +67,19 @@ static void extract_ip_range(const std::string& ip_range, std::string& from,
     if (from_addr > to_addr) {
         std::swap(from, to);
     }
+}
+
+static std::string resolve_hostname(const std::string& ip) {
+    std::string hostname;
+    hostname.resize(NI_MAXHOST);
+
+    SOCKADDR_IN sa;
+    sa.sin_family = AF_INET;
+    inet_pton(AF_INET, &ip[0], &sa.sin_addr);
+    getnameinfo((struct sockaddr*)&sa, sizeof sa, &hostname[0], NI_MAXHOST,
+                nullptr, 0, 0);
+    hostname.resize(hostname.find('\0'));
+    return hostname;
 }
 
 #endif

@@ -16,6 +16,7 @@
 #include "socket-defs.h"
 #include "../nuggit-config.h"
 #include "../crypt/wpn_crypt.h"
+#include "semver.h"
 
 namespace ng::wpn::chat {
 
@@ -83,6 +84,17 @@ using namespace ng::logging;
     }                                    \
     __ctx__->is_shutdown = true;         \
     __ctx__->disconnect_after.set(std::chrono::seconds(__sec__));
+
+static std::string get_version_string() {
+    static thread_local std::string version;
+
+    if (version.empty()) {
+        version =
+            std::format("{}.{}.{}", BUILD_MAJOR, BUILD_MINOR, BUILD_NUMBER);
+    }
+
+    return version;
+}
 
 static bool is_ip(const std::string& str) {
 #include "ip_regex.inc"
@@ -237,13 +249,8 @@ void chat_server::enqueue_all(const uint8_t* buffer, uint16_t len) {
 
 void chat_server::enqueue_all(
     uint16_t type, const std::function<void(packet_buffer_t& buffer)>& writer) {
-    packet_buffer_t scratch_buffer;
-    scratch_buffer.reset();
-    scratch_buffer.skip_header();
-    writer(scratch_buffer);
-    scratch_buffer.write_header(type);
-
-    enqueue_all(scratch_buffer, scratch_buffer.buffer_length_with_header());
+    const auto& buffer = write_packet(type, writer);
+    enqueue_all(buffer, buffer.buffer_length_with_header());
 }
 
 void chat_server::enqueue(const std::unique_ptr<chat_user_context_t>& ctx,
@@ -258,19 +265,20 @@ void chat_server::enqueue(const std::unique_ptr<chat_user_context_t>& ctx,
 void chat_server::enqueue(
     const std::unique_ptr<chat_user_context_t>& ctx, uint16_t type,
     const std::function<void(packet_buffer_t& buffer)>& writer) {
-    static packet_buffer_t scratch_buffer;
-
-    scratch_buffer.reset();
-    scratch_buffer.skip_header();
-    writer(scratch_buffer);
-    scratch_buffer.write_header(type);
-
-    enqueue(ctx, scratch_buffer, scratch_buffer.buffer_length_with_header());
+    const auto& buffer = write_packet(type, writer);
+    enqueue(ctx, buffer, buffer.buffer_length_with_header());
 }
 
 void chat_server::handle_packet(
     const std::unique_ptr<chat_user_context_t>& ctx) {
     ctx->recv_buffer.reset_cursor();
+
+    /* client id/version packet */
+    if (ctx->recv_buffer.type() == 0x9905) {
+        ctx->recv_buffer.skip_header();
+        ctx->recv_buffer.scan("SS", ctx->client_name, ctx->client_version);
+        return;
+    }
 
     if (!logged_in(ctx)) {
         switch (ctx->recv_buffer.type()) {
@@ -279,6 +287,12 @@ void chat_server::handle_packet(
                 break;
             case 0x13ED: /* 3.53 support */
                 ctx->is353 = true;
+                break;
+            case 0x13EE: /* user redirected from another channel */
+                ctx->recv_buffer.skip_header();
+                ctx->recv_buffer.scan("S", ctx->redirected_from);
+                /* TODO: add redirect blocking */
+                break;
                 break;
             default:
                 info("unhandled pre-login packet type: {}",
@@ -298,6 +312,9 @@ void chat_server::handle_packet(
         case 0x0065: /* rename */
             handle_rename(ctx);
             break;
+        case 0x9901:
+            handle_ipsend(ctx);
+            break;
         case 0xFDE8: /* ping */
             break;
         default:
@@ -305,6 +322,23 @@ void chat_server::handle_packet(
             print_packet(ctx);
             break;
     }
+}
+
+void chat_server::handle_ipsend(
+    const std::unique_ptr<chat_user_context_t>& ctx) {
+    ctx->ipsend_enabled = true;
+
+    for (const auto& user : m_chat_users) {
+        if (!logged_in(ctx)) {
+            continue;
+        }
+
+        enq(ctx, 0x9902, "SDWWWBSS", user->info.username, user->info.primary.ip,
+            user->info.primary.port, user->info.files, user->info.line_type,
+            user->rank(), user->ip, user->hostname);
+    }
+
+    enq(ctx, 0x9903, "B", 0);
 }
 
 bool chat_server::is_username_taken(
@@ -397,10 +431,33 @@ void chat_server::notify_userlist(
 }
 
 void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
-    const auto formatted_join_string =
-        std::format("\x0003\x0004{} \x0003\x0004({} {} files) has entered",
-                    ctx->info.username,
-                    util::get_line_type(ctx->info.line_type), ctx->info.files);
+    using ng::string::utils::replace;
+
+    std::string formatted_join_string;
+    std::string formatted_join_string_ip;
+    const auto fancy_entry = m_nuggit_config.chat_server().fancy_entry();
+    if (fancy_entry) {
+        formatted_join_string =
+            m_nuggit_config.chat_server().fancy_entry_message();
+        formatted_join_string_ip =
+            m_nuggit_config.chat_server().fancy_entry_message_ip();
+        interpolate_name(ctx, formatted_join_string);
+        interpolate_name(ctx, formatted_join_string_ip);
+        replace(formatted_join_string, "$FILES$",
+                std::format("{}", ctx->info.files));
+        replace(formatted_join_string_ip, "$FILES$",
+                std::format("{}", ctx->info.files));
+        replace(formatted_join_string, "$LINE$",
+                util::get_line_type(ctx->info.line_type));
+        replace(formatted_join_string_ip, "$LINE$",
+                util::get_line_type(ctx->info.line_type));
+        replace(formatted_join_string_ip, "$IP$", ctx->ip);
+    } else {
+        formatted_join_string = std::format(
+            "\x0003\x0004{} \x0003\x0004({} {} files) has entered",
+            ctx->info.username, util::get_line_type(ctx->info.line_type),
+            ctx->info.files);
+    }
     append_chat_history(formatted_join_string);
 
     const auto ip = ip_to_uint(ctx->ip);
@@ -409,7 +466,17 @@ void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
             continue;
         }
 
-        if (!user->has_access('I')) {
+        if (fancy_entry && !user->has_access('b')) {
+            enq(user, 0x0072, "SDWWDB", ctx->info.username,
+                ctx->info.primary.ip, ctx->info.primary.port,
+                ctx->info.line_type, ctx->info.files, ctx->rank());
+
+            if (!user->has_access('I')) {
+                echo_clr(user, formatted_join_string);
+            } else {
+                echo_clr(user, formatted_join_string_ip);
+            }
+        } else if (!user->has_access('I')) {
             enq(user, 0x0071, "SDWWDB", ctx->info.username,
                 ctx->info.primary.ip, ctx->info.primary.port,
                 ctx->info.line_type, ctx->info.files, ctx->rank());
@@ -417,6 +484,12 @@ void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
             enq(user, 0x0075, "SDWWDBD", ctx->info.username,
                 ctx->info.primary.ip, ctx->info.primary.port,
                 ctx->info.line_type, ctx->info.files, ctx->rank(), ip);
+        }
+
+        if (user->ipsend_enabled) {
+            enq(user, 0x9902, "SDWWWBSS", ctx->info.username,
+                ctx->info.primary.ip, ctx->info.primary.port, ctx->info.files,
+                ctx->info.line_type, ctx->rank(), ctx->ip, ctx->hostname);
         }
     }
 }
@@ -453,24 +526,74 @@ void chat_server::notify_exile(const std::unique_ptr<chat_user_context_t>& ctx,
     enq(ctx, 0x0190, "S", channelname);
 }
 
+void chat_server::notify_join_request_accepted(
+    const std::unique_ptr<chat_user_context_t>& ctx) {
+    packet_buffer_t composite_packet;
+    composite_packet.reset();
+    composite_packet.skip_header();
+    composite_packet.format("B", 0x31);
+
+    if (m_nuggit_config.chat_server().fancy_entry()) {
+        /**
+         * HACK: necessary to get RoboMX to close the system window when using
+         * fancy entry messages. ¯\_(ツ)_/¯
+         *
+         * pretty clever solution as RoboMX will continue reading the buffer
+         * as if the packets are separate. WinMX will ignore everything past '1'
+         * (0x31).
+         */
+
+        /* server identifier/version packet */
+        composite_packet.insert_at_cursor(
+            write_packet(0x9905, [&](auto& buffer) {
+                buffer.format("SS", "nuggit", get_version_string());
+            }));
+
+        /* user has joined (3.31) */
+        composite_packet.insert_at_cursor(
+            write_packet(0x006E, [&](auto& buffer) {
+                buffer.format("SDWWD", ctx->info.username, ctx->info.primary.ip,
+                              ctx->info.primary.port, ctx->info.line_type,
+                              ctx->info.files);
+            }));
+
+        /* user has left */
+        composite_packet.insert_at_cursor(
+            write_packet(0x0073, [&](auto& buffer) {
+                buffer.format("SDW", ctx->info.username, ctx->info.primary.ip,
+                              ctx->info.primary.port);
+            }));
+    }
+
+    composite_packet.write_header(0x0066);
+    enqueue(ctx, composite_packet,
+            composite_packet.buffer_length_with_header());
+}
+
 void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
-    enq(ctx, 0x0066, "B", 1);
+    ctx->recv_buffer.skip_header();
+    ctx->recv_buffer.scan("SWDWDS", ctx->info.channelname, ctx->info.line_type,
+                          ctx->info.primary.ip, ctx->info.primary.port,
+                          ctx->info.files, ctx->info.username);
+
+    notify_join_request_accepted(ctx);
+
+    enq(ctx, 0x9905, "SS", "nuggit", get_version_string());
 
     if (ctx->is353) {
-        enq(ctx, 0x0068, "B", 1);
+        enq(ctx, 0x0068, "B", 0x31);
     } else {
         info("{} -> login rejected 3.53+ incompatibility", ctx->ip);
-        enq(ctx, 0x00CB, "SS", ">", m_server_line);
+        enq(ctx, 0x00CB, "SS", ">",
+            std::format("This channel is powered by nuggit {}",
+                        get_version_string()));
         enq(ctx, 0x00CB, "SS", ">",
             "Login rejected. Please use a 3.53 compatible client.");
         kick_on_timer(ctx, 5);
         return;
     }
 
-    ctx->recv_buffer.skip_header();
-    ctx->recv_buffer.scan("SWDWDS", ctx->info.channelname, ctx->info.line_type,
-                          ctx->info.primary.ip, ctx->info.primary.port,
-                          ctx->info.files, ctx->info.username);
+    enq(ctx, 0x9904, "S", "#c%d#");
 
     if (m_ban_control.is_banned(ctx->info.username, ctx->ip)) {
         echo(ctx, "You have been banned.");
@@ -494,11 +617,14 @@ void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
     }
 
     /* send server signature, topic, motd, and user list */
-    echof(ctx, "This channel is powered by {}", m_server_line);
+    echof(ctx, "This channel is powered by nuggit {}", get_version_string());
     notify_topic(ctx);
     notify_motd(ctx);
     notify_chat_history(ctx);
     notify_userlist(ctx);
+
+    /* notify ipsend support */
+    enq(ctx, 0x9900, "B", 0x31);
 
     ctx->status.logged_in = true;
 
@@ -513,12 +639,17 @@ void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
 }
 
 void chat_server::handle_message(
-    const std::unique_ptr<chat_user_context_t>& ctx) {
+    const std::unique_ptr<chat_user_context_t>& ctx, const std::string& msg) {
     using ng::string::utils::replace;
-    ctx->recv_buffer.skip_header();
-    std::string message;
-    ctx->recv_buffer.scan("S", message);
-    message = message.substr(0, ctx->recv_buffer.length());
+
+    std::string message = msg;
+
+    /* if no message was passed in, retrieve it from the packet */
+    if (message.empty()) {
+        ctx->recv_buffer.skip_header();
+        ctx->recv_buffer.scan("S", message);
+        message = message.substr(0, ctx->recv_buffer.length());
+    }
 
     if (!ctx->has_access('F') && !ctx->spam_ctrl.can_send()) {
         if (ctx->spam_ctrl.should_notify > 0) {
@@ -529,6 +660,18 @@ void chat_server::handle_message(
         return;
     }
 
+    if (message.find("#\\n#") != std::string::npos && ctx->has_access('N')) {
+        replace(message, "#\\n#", "\n");
+        std::stringstream ss(message);
+        std::string message_line;
+        while (std::getline(ss, message_line)) {
+            handle_message(ctx, message_line);
+        }
+        return;
+    }
+
+    ctx->last_message = message;
+    ctx->message_count++;
     info("<{}> {}", name0(ctx->info.username), message);
     if (!sanity_check(message)) {
         enq(ctx, 0x00D2, "S",
@@ -642,13 +785,13 @@ void chat_server::handle_command(
     }
 
     if (!should_ignore && !is_hidden) {
-        echof(ctx, "> \x0003\x0001{}", command);
+        echof(ctx, "{}> {}{}", COL(8), COL(1), command);
         for (const auto& user : m_chat_users) {
             if (user == ctx || !logged_in(user) || !user->has_access('W')) {
                 continue;
             }
 
-            echof(user, "\x0003\x0008<{}> \x0003\x0001{}", ctx->info.username,
+            echof(user, "{}<{}> {}{}", COL(8), ctx->info.username, COL(1),
                   command);
         }
     }
@@ -685,9 +828,19 @@ void chat_server::handle_command(
         handle_forcelogin_command(ctx, command.substr(command.find(' ') + 1));
     } else if (cmd.starts_with("/setaccess ")) {
         handle_setaccess_command(ctx, command.substr(command.find(' ') + 1));
+    } else if (cmd.starts_with("/setformat ")) {
+        handle_setformat_command(ctx, command.substr(command.find(' ') + 1));
     } else if (cmd == "/color" || cmd == "/colors" || cmd == "/colour" ||
                cmd == "/colours") {
         handle_color_command(ctx);
+    } else if (cmd.starts_with("/opmsg ")) {
+        handle_opmsg_command(ctx, command.substr(command.find(' ') + 1));
+    } else if (cmd.starts_with("/notice ")) {
+        handle_notice_command(ctx, command.substr(command.find(' ') + 1));
+    } else if (cmd.starts_with("/gnotice ")) {
+        handle_gnotice_command(ctx, command.substr(command.find(' ') + 1));
+    } else if (cmd.starts_with("/message ")) {
+        handle_message_command(ctx, command.substr(command.find(' ') + 1));
     } else if (!suppress_invalid) {
         echo(ctx, "Invalid command.");
     }
@@ -702,8 +855,8 @@ void chat_server::handle_action_command(
 
     const auto stripped_username =
         name0(format_colorful_string(ctx->info.username, true));
-    const auto action_formatted = std::format("\x0003\x0003{} \x0003\x0003{}",
-                                              stripped_username, command);
+    const auto action_formatted =
+        std::format("{}{} {}{}", COL(3), stripped_username, COL(3), command);
     append_chat_history(action_formatted);
 
     for (const auto& user : m_chat_users) {
@@ -1115,6 +1268,39 @@ void chat_server::handle_setaccess_command(
     }
 }
 
+void chat_server::handle_setformat_command(
+    const std::unique_ptr<chat_user_context_t>& ctx,
+    const std::string& command) {
+    if (is_invalid_command_input(ctx, command) || !check_access(ctx, "z")) {
+        return;
+    }
+
+    std::stringstream ss(command);
+    std::string username;
+    std::string format;
+
+    if (!std::getline(ss, username, ' ')) {
+        echo(ctx, "Invalid input.");
+        return;
+    }
+
+    if (!std::getline(ss, format)) {
+        format = username;
+        ctx->format = format;
+        echo(ctx, "Format set.");
+        return;
+    }
+
+    const auto exec = [&](const auto& user) {
+        user->format = format;
+        echo(ctx, "Format set.");
+    };
+
+    if (!find_user_by_partial_name(username, exec)) {
+        echo(ctx, "Invalid username.");
+    }
+}
+
 constexpr std::string get_color_menu() {
     std::string colors_menu = "";
     colors_menu += COL(8) + "You can use any color from ";
@@ -1133,6 +1319,127 @@ void chat_server::handle_color_command(
     std::string line;
     while (std::getline(ss, line)) {
         echo(ctx, line);
+    }
+}
+
+void chat_server::handle_opmsg_command(
+    const std::unique_ptr<chat_user_context_t>& ctx,
+    const std::string& command) {
+    if (is_invalid_command_input(ctx, command)) {
+        return;
+    }
+
+    for (const auto& user : m_chat_users) {
+        if (!logged_in(user) || !user->has_access('O')) {
+            continue;
+        }
+
+        echof(user, "{}<{}> {}{}", COL(8), ctx->info.username, COL(1), command);
+    }
+}
+
+void chat_server::handle_notice_command(
+    const std::unique_ptr<chat_user_context_t>& ctx,
+    const std::string& command) {
+    if (is_invalid_command_input(ctx, command) || check_access(ctx, "n")) {
+        return;
+    }
+
+    for (const auto& user : m_chat_users) {
+        if (!logged_in(user)) {
+            continue;
+        }
+
+        echo_clr(user, command);
+    }
+}
+
+void chat_server::handle_gnotice_command(
+    const std::unique_ptr<chat_user_context_t>& ctx,
+    const std::string& command) {
+    if (is_invalid_command_input(ctx, command) || check_access(ctx, "G")) {
+        return;
+    }
+
+    std::stringstream ss(command);
+    std::string access;
+    std::string message;
+
+    if (!std::getline(ss, access, ' ')) {
+        echo(ctx, "Invalid input.");
+        return;
+    }
+
+    if (!std::getline(ss, message) || message.empty()) {
+        echo(ctx, "Invalid input.");
+        return;
+    }
+
+    for (const auto& user : m_chat_users) {
+        if (!logged_in(user) &&
+            !std::all_of(access.begin(), access.end(), [&user](const auto& c) {
+                return user->access.find(c) != std::string::npos;
+            })) {
+            continue;
+        }
+
+        echo_clr(user, command);
+    }
+}
+
+void chat_server::handle_message_command(
+    const std::unique_ptr<chat_user_context_t>& ctx,
+    const std::string& command) {
+    if (is_invalid_command_input(ctx, command) || !check_access(ctx, "m")) {
+        return;
+    }
+
+    std::stringstream ss(command);
+    std::string username;
+    std::string message;
+
+    if (!std::getline(ss, username, ' ')) {
+        echo(ctx, "Invalid input.");
+        return;
+    }
+
+    if (!std::getline(ss, message)) {
+        echo(ctx, "Invalid input.");
+        return;
+    }
+
+    const auto exec = [&](const auto& user) {
+        using ng::string::utils::replace;
+
+        if (user == ctx) {
+            echo(ctx, "Why are you talking to yourself? Please seek help.");
+            return;
+        }
+
+        std::string recv_fmt =
+            m_nuggit_config.chat_server().private_message_recv_format();
+        std::string send_fmt =
+            m_nuggit_config.chat_server().private_message_send_format();
+
+        replace(recv_fmt, "$RNAME0$", name0(user->info.username));
+        replace(recv_fmt, "$RNAME3$", name3(user->info.username));
+        replace(recv_fmt, "$RNAME9$", name9(user->info.username));
+        replace(recv_fmt, "$TEXT$", message);
+        interpolate_name(ctx, recv_fmt);
+
+        replace(send_fmt, "$RNAME0$", name0(user->info.username));
+        replace(send_fmt, "$RNAME3$", name3(user->info.username));
+        replace(send_fmt, "$RNAME9$", name9(user->info.username));
+        replace(send_fmt, "$TEXT$", message);
+        interpolate_name(ctx, send_fmt);
+
+        echo_clr(ctx, send_fmt);
+        echo_clr(user, recv_fmt);
+    };
+
+    if (!find_user_by_partial_name(username, exec)) {
+        echo(ctx, "Could not locate the specified user.");
+        return;
     }
 }
 
@@ -1260,6 +1567,16 @@ void chat_server::interpolate_name(
     replace(str, "$NAME0$", name0(ctx->info.username));
     replace(str, "$NAME3$", name3(ctx->info.username));
     replace(str, "$NAME9$", name9(ctx->info.username));
+}
+
+const packet_buffer_t& chat_server::write_packet(
+    uint16_t type, const std::function<void(packet_buffer_t& buffer)>& writer) {
+    static thread_local packet_buffer_t scratch_buffer;
+    scratch_buffer.reset();
+    scratch_buffer.skip_header();
+    writer(scratch_buffer);
+    scratch_buffer.write_header(type);
+    return scratch_buffer;
 }
 
 chat_server::~chat_server() {}

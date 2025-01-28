@@ -77,6 +77,7 @@ struct chat_user_context_t {
     packet_buffer_t recv_buffer;
     packet_buffer_t send_buffer;
     std::string ip;
+    std::string hostname;
     bool is353;
     bool is_shutdown;
     timer disconnect_after;
@@ -86,6 +87,12 @@ struct chat_user_context_t {
     std::string format;
     std::chrono::time_point<std::chrono::high_resolution_clock> created_at;
     bool is_hidden;
+    std::string redirected_from;
+    std::string last_message;
+    int message_count;
+    std::string client_name;
+    std::string client_version;
+    bool ipsend_enabled;
 
     bool has_access(char access_character) const {
         if (access_character != '+' && access_character != '@' &&
@@ -105,6 +112,7 @@ struct chat_user_context_t {
         ret->keys.up = context->up_key;
         ret->keys.down = context->down_key;
         ret->ip = context->ip;
+        ret->hostname = resolve_hostname(context->ip);
         return ret;
     }
 };
