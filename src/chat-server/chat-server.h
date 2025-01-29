@@ -1,6 +1,7 @@
 #ifndef NG_CHAT_SERVER_H
 #define NG_CHAT_SERVER_H
 
+#include <chrono>
 #include <functional>
 #include <logging.h>
 #include <memory>
@@ -32,6 +33,9 @@ protected:
     std::vector<std::unique_ptr<chat_user_context_t>> m_chat_users;
     ban_control m_ban_control;
     std::vector<std::string> m_chat_history;
+    std::chrono::time_point<std::chrono::high_resolution_clock> m_created_at;
+    int m_total_messages;
+    int m_total_joins;
 
     void enqueue_all(const uint8_t* buffer, uint16_t len);
     void enqueue_all(
@@ -112,8 +116,13 @@ protected:
                                const std::string& command);
     void handle_gnotice_command(const std::unique_ptr<chat_user_context_t>& ctx,
                                 const std::string& command);
+    void handle_privnotice_command(
+        const std::unique_ptr<chat_user_context_t>& ctx,
+        const std::string& command);
     void handle_message_command(const std::unique_ptr<chat_user_context_t>& ctx,
                                 const std::string& command);
+    void handle_stats_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                              const std::string& command);
 
     bool check_access(const std::unique_ptr<chat_user_context_t>& ctx,
                       const std::string& access);

@@ -95,6 +95,73 @@ using namespace ng::logging;
     __ctx__->is_shutdown = true;         \
     __ctx__->disconnect_after.set(std::chrono::seconds(__sec__));
 
+#define assert_command_input(__ctx__, __exp__)   \
+    if (!(__exp__)) {                            \
+        echo(__ctx__, "Invalid command input."); \
+        return;                                  \
+    }
+
+#define assert_find_user(__ctx__, __username__, __exec__)     \
+    if (!find_user_by_partial_name(__username__, __exec__)) { \
+        echo(__ctx__, "Unable to find the specified user.");  \
+        return;                                               \
+    }
+
+static uint64_t get_system_uptime_seconds() {
+    uint64_t seconds;
+
+#if defined(_WIN32) || defined(_WIN64)
+    seconds = GetTickCount64() / 1000;
+#else
+    std::ifstream uptime_file("/proc/uptime");
+    std::string uptime_string;
+
+    if (uptime_file.is_open()) {
+        uptime_file >> uptime_string;
+        seconds = std::stoull(uptime_string);
+        uptime_file.close();
+    } else {
+        warn("error opening /proc/uptime", get_error_message(errno));
+    }
+#endif
+
+    return seconds;
+}
+
+static std::string get_time_since(uint64_t elapsed_seconds) {
+    auto days = elapsed_seconds / 86400;
+    auto hours = (elapsed_seconds % 86400) / 3600;
+    auto minutes = (elapsed_seconds % 3600) / 60;
+    auto seconds = elapsed_seconds % 60;
+
+    std::ostringstream oss;
+
+    if (days) {
+        oss << days << "d ";
+    }
+
+    if (days || hours) {
+        oss << hours << "h ";
+    }
+
+    if (days || hours || minutes) {
+        oss << minutes << "m ";
+    }
+
+    oss << seconds << "s";
+
+    return oss.str();
+}
+
+static std::string get_time_since(
+    const std::chrono::time_point<std::chrono::high_resolution_clock>& tp) {
+    const auto elapsed = std::chrono::high_resolution_clock::now() - tp;
+    const auto elapsed_seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(elapsed);
+
+    return get_time_since(elapsed_seconds.count());
+}
+
 static std::string get_version_string() {
     static thread_local std::string version;
 
@@ -127,7 +194,8 @@ static bool is_ip_range(const std::string& str) {
 }
 
 chat_server::chat_server(nuggit_config_reader& nuggit_config)
-    : m_nuggit_config(nuggit_config) {
+    : m_nuggit_config(nuggit_config),
+      m_created_at(std::chrono::high_resolution_clock::now()) {
     if (!m_ban_control.load()) {
         warn("unable to load banlist. continuing.");
     } else {
@@ -620,6 +688,9 @@ void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
                           ctx->info.primary.ip, ctx->info.primary.port,
                           ctx->info.files, ctx->info.username);
 
+    ctx->client_name = "WinMX";
+    ctx->client_version = ctx->is353 ? "3.53" : "3.31";
+
     notify_join_request_accepted(ctx);
 
     enq(ctx, 0x9905, "SS", "nuggit", get_version_string());
@@ -662,6 +733,7 @@ void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
         enq(ctx, 0x9900, "B", 0x31);
     }
 
+    m_total_joins++;
     ctx->status.logged_in = true;
 
     /* send join notification */
@@ -708,6 +780,7 @@ void chat_server::handle_message(
 
     ctx->last_message = message;
     ctx->message_count++;
+    m_total_messages++;
     info("<{}> {}", name0(ctx->info.username), message);
     if (!sanity_check(message)) {
         echo(ctx, "llegal pattern detected. Message blocked.");
@@ -881,8 +954,14 @@ void chat_server::handle_command(
         handle_notice_command(ctx, command.substr(command.find(' ') + 1));
     } else if (cmd.starts_with("/gnotice ")) {
         handle_gnotice_command(ctx, command.substr(command.find(' ') + 1));
+    } else if (cmd.starts_with("/privnotice ")) {
+        handle_privnotice_command(ctx, command.substr(command.find(' ') + 1));
     } else if (cmd.starts_with("/message ")) {
         handle_message_command(ctx, command.substr(command.find(' ') + 1));
+    } else if (cmd.starts_with("/stats")) {
+        const auto len =
+            (std::min)(command.find(' '), command.length() - 1) + 1;
+        handle_stats_command(ctx, command.substr(len));
     } else if (!suppress_invalid) {
         echo(ctx, "Invalid command.");
     }
@@ -961,9 +1040,7 @@ void chat_server::handle_kick_command(
         user->s.close();
     };
 
-    if (command.length() == 0 || !find_user_by_partial_name(command, exec)) {
-        echo(ctx, "Invalid username.");
-    }
+    assert_find_user(ctx, command, exec);
 }
 
 void chat_server::handle_ban_command(
@@ -1033,9 +1110,7 @@ void chat_server::handle_kickban_command(
         user->s.close();
     };
 
-    if (!find_user_by_partial_name(command, exec)) {
-        echo(ctx, "Invalid username.");
-    }
+    assert_find_user(ctx, command, exec);
 }
 
 void chat_server::handle_unban_command(
@@ -1162,9 +1237,7 @@ void chat_server::handle_hide_command(
         user->is_hidden = !user->is_hidden;
     };
 
-    if (!find_user_by_partial_name(command, exec)) {
-        echo(ctx, "Invalid username.");
-    }
+    assert_find_user(ctx, command, exec);
 }
 
 void chat_server::handle_redirect_command(
@@ -1174,11 +1247,7 @@ void chat_server::handle_redirect_command(
         return;
     }
 
-    if (!is_channelname_valid(command)) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
-
+    assert_command_input(ctx, is_channelname_valid(command));
     notify_redirect(command);
 }
 
@@ -1193,28 +1262,15 @@ void chat_server::handle_exile_command(
     std::string username;
     std::string channelname;
 
-    if (!std::getline(ss, username, ' ')) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
-
-    if (!std::getline(ss, channelname, '\0')) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
-
-    if (!is_channelname_valid(channelname)) {
-        echo(ctx, "Invalid channelname.");
-        return;
-    }
+    assert_command_input(ctx, std::getline(ss, username, ' '));
+    assert_command_input(ctx, std::getline(ss, channelname, '\0'));
+    assert_command_input(ctx, is_channelname_valid(channelname));
 
     const auto exec = [&](const auto& user) {
         notify_exile(user, channelname);
     };
 
-    if (!find_user_by_partial_name(username, exec)) {
-        echo(ctx, "Unable to locate the specified user.");
-    }
+    assert_find_user(ctx, username, exec);
 }
 
 void chat_server::handle_forcelogin_command(
@@ -1263,9 +1319,7 @@ void chat_server::handle_forcelogin_command(
         }
     };
 
-    if (!find_user_by_partial_name(username, exec)) {
-        echo(ctx, "Unable to locate the specified user.");
-    }
+    assert_find_user(ctx, username, exec);
 }
 
 void chat_server::handle_setaccess_command(
@@ -1279,15 +1333,9 @@ void chat_server::handle_setaccess_command(
     std::string username;
     std::string access;
 
-    if (!std::getline(ss, username, ' ')) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
-
-    if (!std::getline(ss, access, '\0') || access.length() > 32) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
+    assert_command_input(ctx, std::getline(ss, username, ' '));
+    assert_command_input(
+        ctx, std::getline(ss, access, '\0') && access.length() < 32);
 
     const auto exec = [&](const auto& user) {
         const auto rank = user->rank();
@@ -1307,9 +1355,7 @@ void chat_server::handle_setaccess_command(
         }
     };
 
-    if (!find_user_by_partial_name(username, exec)) {
-        echo(ctx, "Unable to locate the specified user.");
-    }
+    assert_find_user(ctx, username, exec);
 }
 
 void chat_server::handle_setformat_command(
@@ -1323,10 +1369,7 @@ void chat_server::handle_setformat_command(
     std::string username;
     std::string format;
 
-    if (!std::getline(ss, username, ' ')) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
+    assert_command_input(ctx, std::getline(ss, username, ' '));
 
     if (!std::getline(ss, format)) {
         format = username;
@@ -1335,14 +1378,14 @@ void chat_server::handle_setformat_command(
         return;
     }
 
+    assert_command_input(ctx, format.length() < 32);
+
     const auto exec = [&](const auto& user) {
         user->format = format;
         echo(ctx, "Format set.");
     };
 
-    if (!find_user_by_partial_name(username, exec)) {
-        echo(ctx, "Invalid username.");
-    }
+    assert_find_user(ctx, username, exec);
 }
 
 constexpr std::string get_color_menu() {
@@ -1395,7 +1438,7 @@ void chat_server::handle_opmsg_command(
 void chat_server::handle_notice_command(
     const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
-    if (is_invalid_command_input(ctx, command) || check_access(ctx, "n")) {
+    if (is_invalid_command_input(ctx, command) || !check_access(ctx, "n")) {
         return;
     }
 
@@ -1411,7 +1454,7 @@ void chat_server::handle_notice_command(
 void chat_server::handle_gnotice_command(
     const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
-    if (is_invalid_command_input(ctx, command) || check_access(ctx, "G")) {
+    if (is_invalid_command_input(ctx, command) || !check_access(ctx, "G")) {
         return;
     }
 
@@ -1419,15 +1462,8 @@ void chat_server::handle_gnotice_command(
     std::string access;
     std::string message;
 
-    if (!std::getline(ss, access, ' ')) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
-
-    if (!std::getline(ss, message) || message.empty()) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
+    assert_command_input(ctx, std::getline(ss, access, ' '));
+    assert_command_input(ctx, std::getline(ss, message) && !message.empty());
 
     for (const auto& user : m_chat_users) {
         if (!logged_in(user) &&
@@ -1441,6 +1477,25 @@ void chat_server::handle_gnotice_command(
     }
 }
 
+void chat_server::handle_privnotice_command(
+    const std::unique_ptr<chat_user_context_t>& ctx,
+    const std::string& command) {
+    if (is_invalid_command_input(ctx, command) || !check_access(ctx, "mn")) {
+        return;
+    }
+
+    std::stringstream ss(command);
+    std::string username;
+    std::string notice;
+
+    assert_command_input(ctx, std::getline(ss, username, ' '));
+    assert_command_input(ctx, std::getline(ss, notice));
+
+    const auto exec = [&](const auto& user) { echo_clr(user, notice); };
+
+    assert_find_user(ctx, username, exec);
+}
+
 void chat_server::handle_message_command(
     const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
@@ -1452,15 +1507,8 @@ void chat_server::handle_message_command(
     std::string username;
     std::string message;
 
-    if (!std::getline(ss, username, ' ')) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
-
-    if (!std::getline(ss, message)) {
-        echo(ctx, "Invalid input.");
-        return;
-    }
+    assert_command_input(ctx, std::getline(ss, username, ' '));
+    assert_command_input(ctx, std::getline(ss, message));
 
     const auto exec = [&](const auto& user) {
         using ng::string::utils::replace;
@@ -1491,10 +1539,53 @@ void chat_server::handle_message_command(
         echo_clr(user, recv_fmt);
     };
 
-    if (!find_user_by_partial_name(username, exec)) {
-        echo(ctx, "Could not locate the specified user.");
+    assert_find_user(ctx, username, exec);
+}
+
+void chat_server::handle_stats_command(
+    const std::unique_ptr<chat_user_context_t>& ctx,
+    const std::string& command) {
+    if (command.empty()) {
+        if (check_access(ctx, "S")) {
+            echo(ctx, std::format("Channelname: {}", ctx->info.channelname));
+            echo(ctx, std::format("Host uptime: {}",
+                                  get_time_since(get_system_uptime_seconds())));
+            echo(ctx, std::format("Channel uptime: {}",
+                                  get_time_since(m_created_at)));
+            echo(ctx, std::format("Current users: {}",
+                                  std::count_if(m_chat_users.begin(),
+                                                m_chat_users.end(),
+                                                [](const auto& user) {
+                                                    return logged_in(user);
+                                                })));
+            echo(ctx, std::format("Total joins: {}", m_total_joins));
+            echo(ctx, std::format("Total messages: {}", m_total_messages));
+            echo(ctx, std::format("This channel is powered by nuggit {}",
+                                  get_version_string()));
+        }
         return;
     }
+
+    if (!check_access(ctx, "s")) {
+        return;
+    }
+
+    const auto exec = [&](const auto& user) {
+        echo(ctx, std::format("Username: {}", user->info.username));
+        echo(ctx, std::format("Channelname: {}", user->info.channelname));
+        echo(ctx, std::format("IP address: {}", user->ip));
+        echo(ctx, std::format("Hostname: {}", user->hostname));
+        echo(ctx, std::format("Access: {}", user->access));
+        echo(ctx, std::format("Files: {}", user->info.files));
+        echo(ctx, std::format("Total messages: {}", user->message_count));
+        echo(ctx,
+             std::format("Stay time: {}", get_time_since(user->created_at)));
+        echo(ctx, std::format("Client: {} {}", user->client_name,
+                              user->client_version));
+        echo(ctx, std::format("Text format: {}", user->format));
+    };
+
+    assert_find_user(ctx, command, exec);
 }
 
 bool chat_server::check_access(const std::unique_ptr<chat_user_context_t>& ctx,
@@ -1550,7 +1641,7 @@ bool chat_server::is_invalid_command_input(
     const std::string& command) {
     if (command.length() == 0 ||
         std::all_of(command.begin(), command.end(), ::isspace)) {
-        echo(ctx, "Invalid input.");
+        echo(ctx, "Invalid command input.");
         return true;
     }
 

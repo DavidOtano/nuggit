@@ -54,7 +54,8 @@ struct chat_user_context_t {
           disconnect_after(false),
           ping(false),
           created_at(std::chrono::high_resolution_clock::now()),
-          is_hidden(false) {}
+          is_hidden(false),
+          message_count(0) {}
 
     chat_user_context_t(net::tcp_socket&& socket)
         : info(),
@@ -68,7 +69,8 @@ struct chat_user_context_t {
           disconnect_after(false),
           ping(false),
           created_at(std::chrono::high_resolution_clock::now()),
-          is_hidden(false) {}
+          is_hidden(false),
+          message_count(0) {}
 
     user_info_t info;
     tcp_keys_t keys;
