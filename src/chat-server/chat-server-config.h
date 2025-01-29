@@ -41,6 +41,7 @@ public:
     const std::string& private_message_send_format() const {
         return m_private_message_send_format;
     }
+    const std::string& opmsg_format() const { return m_opmsg_format; }
 
 private:
     std::vector<std::string> m_channelnames;
@@ -55,6 +56,7 @@ private:
     std::string m_fancy_entry_message_ip;
     std::string m_private_message_recv_format;
     std::string m_private_message_send_format;
+    std::string m_opmsg_format;
 };
 
 class chat_server_login_section : public section_parser {

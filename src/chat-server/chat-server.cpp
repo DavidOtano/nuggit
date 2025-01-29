@@ -50,26 +50,36 @@ using namespace ng::logging;
 /*
  * echo a message to the specified user
  */
-#define echo(__ctx__, __text__) enq(__ctx__, 0x00D2, "S", __text__)
+#define echo(__ctx__, __text__)                                          \
+    if (__ctx__->is353) {                                                \
+        enq(__ctx__, 0x00D2, "S", __text__);                             \
+    } else {                                                             \
+        enq(__ctx__, 0x00CB, "SS", "", remove_encoded_colors(__text__)); \
+    }
 
 /*
  * echo a message to the specified user (formatted)
  */
-#define echof(__ctx__, __fmt__, ...) \
-    enq(__ctx__, 0x00D2, "S", std::format(__fmt__, __VA_ARGS__))
+#define echof(__ctx__, __fmt__, ...)                                   \
+    if (__ctx__->is353) {                                              \
+        enq(__ctx__, 0x00D2, "S", std::format(__fmt__, __VA_ARGS__));  \
+    } else {                                                           \
+        enq(__ctx__, 0x00CB, "SS", "",                                 \
+            remove_encoded_colors(std::format(__fmt__, __VA_ARGS__))); \
+    }
 
 /*
  * echo a message to the specified user in color
  */
 #define echo_clr(__ctx__, __text__) \
-    enq(__ctx__, 0x00D2, "S", format_colorful_string(__text__))
+    echo(__ctx__, format_colorful_string(__text__, !__ctx__->is353));
 
 /*
  * echo a message to the specified user in color (formatted)
  */
-#define echo_clrf(__ctx__, __fmt__, ...) \
-    enq(__ctx__, 0x00D2, "S",            \
-        format_colorful_string(std::format(__fmt__, __VA_ARGS__)))
+#define echo_clrf(__ctx__, __fmt__, ...)                                    \
+    echo(__ctx__, format_colorful_string(std::format(__fmt__, __VA_ARGS__), \
+                                         !__ctx__->is353))
 
 /*
  * shutdown the user's socket for receiving and kick them after the specified
@@ -305,7 +315,7 @@ void chat_server::handle_packet(
     }
 
     switch (ctx->recv_buffer.type()) {
-        case 0x00C9:
+        case 0x00C8:
         case 0x1450: /* message */
             handle_message(ctx);
             break;
@@ -315,6 +325,12 @@ void chat_server::handle_packet(
         case 0x9901:
             handle_ipsend(ctx);
             break;
+        case 0x00CA: {
+            std::string text;
+            ctx->recv_buffer.skip_header();
+            ctx->recv_buffer.scan("S", text);
+            handle_action_command(ctx, text);
+        }
         case 0xFDE8: /* ping */
             break;
         default:
@@ -424,9 +440,15 @@ void chat_server::notify_userlist(
             continue;
         }
 
-        enq(ctx, 0x0072, "SDWWDB", user->info.username, user->info.primary.ip,
-            user->info.primary.port, user->info.line_type, user->info.files,
-            user->rank());
+        if (ctx->is353) {
+            enq(ctx, 0x0072, "SDWWDB", user->info.username,
+                user->info.primary.ip, user->info.primary.port,
+                user->info.line_type, user->info.files, user->rank());
+        } else {
+            enq(ctx, 0x006F, "SDWWDB", user->info.username,
+                user->info.primary.ip, user->info.primary.port,
+                user->info.line_type, user->info.files);
+        }
     }
 }
 
@@ -454,9 +476,8 @@ void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
         replace(formatted_join_string_ip, "$IP$", ctx->ip);
     } else {
         formatted_join_string = std::format(
-            "\x0003\x0004{} \x0003\x0004({} {} files) has entered",
-            ctx->info.username, util::get_line_type(ctx->info.line_type),
-            ctx->info.files);
+            "{}{} {}({} {} files) has entered", COL(4), ctx->info.username,
+            COL(4), util::get_line_type(ctx->info.line_type), ctx->info.files);
     }
     append_chat_history(formatted_join_string);
 
@@ -466,7 +487,7 @@ void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
             continue;
         }
 
-        if (fancy_entry && !user->has_access('b')) {
+        if (user->is353 && fancy_entry && !user->has_access('b')) {
             enq(user, 0x0072, "SDWWDB", ctx->info.username,
                 ctx->info.primary.ip, ctx->info.primary.port,
                 ctx->info.line_type, ctx->info.files, ctx->rank());
@@ -476,14 +497,17 @@ void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
             } else {
                 echo_clr(user, formatted_join_string_ip);
             }
-        } else if (!user->has_access('I')) {
+        } else if (!user->has_access('I') && user->is353) {
             enq(user, 0x0071, "SDWWDB", ctx->info.username,
                 ctx->info.primary.ip, ctx->info.primary.port,
                 ctx->info.line_type, ctx->info.files, ctx->rank());
-        } else {
+        } else if (user->is353) {
             enq(user, 0x0075, "SDWWDBD", ctx->info.username,
                 ctx->info.primary.ip, ctx->info.primary.port,
                 ctx->info.line_type, ctx->info.files, ctx->rank(), ip);
+        } else { /* 3.31 */
+            enq(user, 0x006E, "SDWWD", ctx->info.username, ctx->info.primary.ip,
+                ctx->info.primary.port, ctx->info.line_type, ctx->info.files);
         }
 
         if (user->ipsend_enabled) {
@@ -498,9 +522,29 @@ void chat_server::notify_rename(const std::unique_ptr<chat_user_context_t>& ctx,
                                 const std::string& new_username,
                                 uint32_t new_pri_ip, uint16_t new_pri_port,
                                 uint16_t new_line_type, uint16_t new_files) {
-    enqall(0x0074, "SDWSDWWDB", ctx->info.username, ctx->info.primary.ip,
-           ctx->info.primary.port, new_username, new_pri_ip, new_pri_port,
-           new_line_type, new_files, ctx->rank());
+    auto buff353 = write_packet(0x0074, [&](auto& buffer) {
+        buffer.format("SDWSDWWDB", ctx->info.username, ctx->info.primary.ip,
+                      ctx->info.primary.port, new_username, new_pri_ip,
+                      new_pri_port, new_line_type, new_files, ctx->rank());
+    });
+
+    auto buff331 = write_packet(0x0070, [&](auto& buffer) {
+        buffer.format("SDWSDWWD", ctx->info.username, ctx->info.primary.ip,
+                      ctx->info.primary.port, new_username, new_pri_ip,
+                      new_pri_port, new_line_type, new_files);
+    });
+
+    for (const auto& user : m_chat_users) {
+        if (!logged_in(user)) {
+            continue;
+        }
+
+        if (user->is353) {
+            enqueue(user, buff353, buff353.buffer_length_with_header());
+        } else {
+            enqueue(user, buff331, buff331.buffer_length_with_header());
+        }
+    }
 }
 
 void chat_server::notify_has_parted(
@@ -510,7 +554,7 @@ void chat_server::notify_has_parted(
     }
 
     const auto parted_string =
-        std::format("\x0003\x0005{} \x0003\x0005has left", ctx->info.username);
+        std::format("{}{} {}has left", COL(5), ctx->info.username, COL(5));
     append_chat_history(parted_string);
 
     enqall(0x0073, "SDW", ctx->info.username, ctx->info.primary.ip,
@@ -533,7 +577,7 @@ void chat_server::notify_join_request_accepted(
     composite_packet.skip_header();
     composite_packet.format("B", 0x31);
 
-    if (m_nuggit_config.chat_server().fancy_entry()) {
+    if (ctx->is353 && m_nuggit_config.chat_server().fancy_entry()) {
         /**
          * HACK: necessary to get RoboMX to close the system window when using
          * fancy entry messages. ¯\_(ツ)_/¯
@@ -582,18 +626,8 @@ void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
 
     if (ctx->is353) {
         enq(ctx, 0x0068, "B", 0x31);
-    } else {
-        info("{} -> login rejected 3.53+ incompatibility", ctx->ip);
-        enq(ctx, 0x00CB, "SS", ">",
-            std::format("This channel is powered by nuggit {}",
-                        get_version_string()));
-        enq(ctx, 0x00CB, "SS", ">",
-            "Login rejected. Please use a 3.53 compatible client.");
-        kick_on_timer(ctx, 5);
-        return;
+        enq(ctx, 0x9904, "S", "#c%d#");
     }
-
-    enq(ctx, 0x9904, "S", "#c%d#");
 
     if (m_ban_control.is_banned(ctx->info.username, ctx->ip)) {
         echo(ctx, "You have been banned.");
@@ -624,7 +658,9 @@ void chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
     notify_userlist(ctx);
 
     /* notify ipsend support */
-    enq(ctx, 0x9900, "B", 0x31);
+    if (ctx->is353) {
+        enq(ctx, 0x9900, "B", 0x31);
+    }
 
     ctx->status.logged_in = true;
 
@@ -674,8 +710,7 @@ void chat_server::handle_message(
     ctx->message_count++;
     info("<{}> {}", name0(ctx->info.username), message);
     if (!sanity_check(message)) {
-        enq(ctx, 0x00D2, "S",
-            "\x0003\x0008Illegal pattern detected. Message blocked.");
+        echo(ctx, "llegal pattern detected. Message blocked.");
         return;
     }
 
@@ -699,10 +734,17 @@ void chat_server::handle_message(
             continue;
         }
 
-        if (!user->has_access('b') && user->has_access('C')) {
+        if (user->is353 && !user->has_access('b') && user->has_access('C')) {
             echo_clr(user, formatted);
         } else {
-            enq(user, 0x00C9, "SSB", ctx->info.username, message, ctx->rank());
+            if (user->has_access('b')) {
+                enq(user, 0x00C9, "SSB", ctx->info.username, message,
+                    ctx->rank());
+            } else {
+                enq(user, 0x00C9, "SSB",
+                    format_colorful_string(name0(ctx->info.username), true),
+                    format_colorful_string(message, true), ctx->rank());
+            }
         }
     }
 }
@@ -864,10 +906,12 @@ void chat_server::handle_action_command(
             continue;
         }
 
-        if (!user->has_access('b')) {
+        if (ctx->is353 && !user->has_access('b')) {
             echo(user, action_formatted);
         } else {
-            enq(user, 0x00CB, "SS", ctx->info.username, command);
+            enq(user, 0x00CB, "SS",
+                ctx->has_access('b') ? ctx->info.username : stripped_username,
+                command);
         }
     }
 }
@@ -1314,6 +1358,11 @@ constexpr std::string get_color_menu() {
 
 void chat_server::handle_color_command(
     const std::unique_ptr<chat_user_context_t>& ctx) {
+    if (!ctx->is353) {
+        echo(ctx, "Colorful text is only supported for 3.53+ clients.");
+        return;
+    }
+
     std::string color_menu = get_color_menu();
     std::stringstream ss(color_menu);
     std::string line;
@@ -1325,16 +1374,21 @@ void chat_server::handle_color_command(
 void chat_server::handle_opmsg_command(
     const std::unique_ptr<chat_user_context_t>& ctx,
     const std::string& command) {
+    using ng::string::utils::replace;
     if (is_invalid_command_input(ctx, command)) {
         return;
     }
+
+    auto opmsg_format = m_nuggit_config.chat_server().opmsg_format();
+    interpolate_name(ctx, opmsg_format);
+    replace(opmsg_format, "$TEXT$", command);
 
     for (const auto& user : m_chat_users) {
         if (!logged_in(user) || !user->has_access('O')) {
             continue;
         }
 
-        echof(user, "{}<{}> {}{}", COL(8), ctx->info.username, COL(1), command);
+        echo_clr(user, opmsg_format);
     }
 }
 
@@ -1569,9 +1623,9 @@ void chat_server::interpolate_name(
     replace(str, "$NAME9$", name9(ctx->info.username));
 }
 
-const packet_buffer_t& chat_server::write_packet(
+packet_buffer_t chat_server::write_packet(
     uint16_t type, const std::function<void(packet_buffer_t& buffer)>& writer) {
-    static thread_local packet_buffer_t scratch_buffer;
+    packet_buffer_t scratch_buffer;
     scratch_buffer.reset();
     scratch_buffer.skip_header();
     writer(scratch_buffer);

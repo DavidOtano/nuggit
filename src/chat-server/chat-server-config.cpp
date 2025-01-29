@@ -28,6 +28,8 @@ void ng::config::chat_server::chat_server_section::parse(
         m_private_message_recv_format = value;
     } else if (key == "PrivateMessageSendFormat") {
         m_private_message_send_format = value;
+    } else if (key == "OpMsgFormat") {
+        m_opmsg_format = value;
     } else {
         throw ini_parser_exception(std::format("invalid server key '{}'", key));
     }

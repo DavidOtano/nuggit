@@ -105,6 +105,19 @@ using namespace ng::utils;
     return result;
 }
 
+[[nodiscard]] static std::string remove_encoded_colors(const std::string& str) {
+    std::stringstream iss(str);
+    std::ostringstream oss;
+    std::string text;
+
+    while (std::getline(iss, text, '\x0003')) {
+        oss << text;
+        iss.ignore();
+    }
+
+    return oss.str();
+}
+
 }  // namespace ng::wpn::chat
 
 #endif

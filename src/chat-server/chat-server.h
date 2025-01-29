@@ -132,7 +132,7 @@ protected:
     static bool sanity_check(const std::string& str);
     static void interpolate_name(
         const std::unique_ptr<chat_user_context_t>& ctx, std::string& str);
-    static const packet_buffer_t& write_packet(
+    static packet_buffer_t write_packet(
         uint16_t type,
         const std::function<void(packet_buffer_t& buffer)>& writer);
 };
