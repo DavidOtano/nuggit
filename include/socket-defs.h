@@ -2,6 +2,7 @@
 #define NG_SOCKET_DEFS_H
 
 #include <cstdint>
+#include <future>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -69,17 +70,19 @@ static void extract_ip_range(const std::string& ip_range, std::string& from,
     }
 }
 
-static std::string resolve_hostname(const std::string& ip) {
-    std::string hostname;
-    hostname.resize(NI_MAXHOST);
+static std::future<std::string> resolve_hostname(const std::string& ip) {
+    return std::async(std::launch::async, [&ip]() {
+        std::string hostname;
+        hostname.resize(NI_MAXHOST);
 
-    SOCKADDR_IN sa;
-    sa.sin_family = AF_INET;
-    inet_pton(AF_INET, &ip[0], &sa.sin_addr);
-    getnameinfo((struct sockaddr*)&sa, sizeof sa, &hostname[0], NI_MAXHOST,
-                nullptr, 0, 0);
-    hostname.resize(hostname.find('\0'));
-    return hostname;
+        SOCKADDR_IN sa;
+        sa.sin_family = AF_INET;
+        inet_pton(AF_INET, &ip[0], &sa.sin_addr);
+        getnameinfo((struct sockaddr*)&sa, sizeof sa, &hostname[0], NI_MAXHOST,
+                    nullptr, 0, 0);
+        hostname.resize(hostname.find('\0'));
+        return hostname;
+    });
 }
 
 #endif

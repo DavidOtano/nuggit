@@ -50,6 +50,11 @@ bool section_parser::get_bool_from_string_value(const std::string& value) {
         return notify_error(get_error_message(errno));
     }
 
+    /* reset sections */
+    for (const auto& kvp : section_parser_map_) {
+        kvp.second->reset();
+    }
+
     std::string line;
     std::string current_section;
     std::string key;

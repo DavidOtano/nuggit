@@ -6,6 +6,7 @@
 #include <socket.h>
 #include <timer.h>
 #include <memory>
+#include <variant>
 #include "../proto/packet.h"
 #include "../peer/handshake.h"
 #include "spam-control.h"
@@ -13,6 +14,11 @@
 namespace ng::wpn::chat {
 
 using namespace wpn::proto;
+
+template <class... Ts>
+struct hostname_visitor : Ts... {
+    using Ts::operator()...;
+};
 
 struct primary_info_t {
     primary_info_t() : ip(0), port(0) {}
@@ -95,6 +101,7 @@ struct chat_user_context_t {
     std::string client_name;
     std::string client_version;
     bool ipsend_enabled;
+    std::variant<std::monostate, std::future<std::string>> hostname_state;
 
     bool has_access(char access_character) const {
         if (access_character != '+' && access_character != '@' &&
@@ -114,7 +121,6 @@ struct chat_user_context_t {
         ret->keys.up = context->up_key;
         ret->keys.down = context->down_key;
         ret->ip = context->ip;
-        ret->hostname = resolve_hostname(context->ip);
         return ret;
     }
 };

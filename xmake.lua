@@ -4,6 +4,7 @@
 set_xmakever('2.9.7')
 
 set_project('nuggit')
+add_requires('cpr')
 
 rule('base')
     on_load(function(target)
@@ -29,6 +30,7 @@ rule('base')
             target:add('defines', 'WIN32_LEAN_AND_MEAN')
             target:add('syslinks', 'ws2_32')
         end
+        target:add('packages', 'cpr')
     end)
 rule_end()
 

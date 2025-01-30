@@ -11,6 +11,7 @@ using namespace ng::plaintext;
 class nuggit_section : public section_parser {
 public:
     void parse(const std::string& key, const std::string& value) override;
+    void reset() override {};
 
     int tcp_port() const { return m_tcp_port; }
     int udp_port() const { return m_udp_port; }
@@ -34,7 +35,7 @@ public:
     }
 
     const nuggit_section& nuggit() const { return m_nuggit_section; }
-    const ng::config::chat_server::chat_server_section& chat_server() const {
+    ng::config::chat_server::chat_server_section& chat_server() {
         return m_chat_server_section;
     }
     const ng::config::chat_server::chat_server_login_section&

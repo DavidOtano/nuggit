@@ -19,7 +19,7 @@ using namespace wpn::proto;
 
 class chat_server : public ng_service, public peer::peer_receiver {
 public:
-    chat_server(nuggit_config_reader& nuggit_config);
+    chat_server(nuggit_config_reader& nuggit_config) noexcept;
     bool init();
     bool process() override;
     void accept(
@@ -36,6 +36,8 @@ protected:
     std::chrono::time_point<std::chrono::high_resolution_clock> m_created_at;
     int m_total_messages;
     int m_total_joins;
+    std::string m_external_ip;
+    timer m_resolver_interval;
 
     void enqueue_all(const uint8_t* buffer, uint16_t len);
     void enqueue_all(
@@ -67,9 +69,9 @@ protected:
     void notify_join_request_accepted(
         const std::unique_ptr<chat_user_context_t>& ctx);
 
-    void handle_packet(const std::unique_ptr<chat_user_context_t>& ctx);
+    bool handle_packet(const std::unique_ptr<chat_user_context_t>& ctx);
     void handle_ipsend(const std::unique_ptr<chat_user_context_t>& ctx);
-    void handle_join(const std::unique_ptr<chat_user_context_t>& ctx);
+    bool handle_join(const std::unique_ptr<chat_user_context_t>& ctx);
     void handle_message(const std::unique_ptr<chat_user_context_t>& ctx,
                         const std::string& msg = "");
     void handle_rename(const std::unique_ptr<chat_user_context_t>& ctx);
@@ -123,6 +125,25 @@ protected:
                                 const std::string& command);
     void handle_stats_command(const std::unique_ptr<chat_user_context_t>& ctx,
                               const std::string& command);
+    void handle_access_command(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_logout_command(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_channelname_command(
+        const std::unique_ptr<chat_user_context_t>& ctx,
+        const std::string& command, int channel_index);
+    void handle_bot_command(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_topic_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                              const std::string& command, int topic_index);
+    void handle_motd_command(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_setmotd_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                                const std::string& command);
+    void handle_addmotd_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                                const std::string& command);
+    void handle_limit_command(const std::unique_ptr<chat_user_context_t>& ctx,
+                              const std::string& command);
+    void handle_reload_command(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_who_command(const std::unique_ptr<chat_user_context_t>& ctx);
+    void interpolate_motd_variables(
+        const std::unique_ptr<chat_user_context_t>& ctx, std::string& str);
 
     bool check_access(const std::unique_ptr<chat_user_context_t>& ctx,
                       const std::string& access);
@@ -135,12 +156,15 @@ protected:
     bool is_invalid_command_input(
         const std::unique_ptr<chat_user_context_t>& ctx,
         const std::string& command);
+    const std::string& resolve_external_ip();
 
     static bool is_username_valid(const std::string& username);
     static bool is_channelname_valid(const std::string& channelname);
     static bool sanity_check(const std::string& str);
     static void interpolate_name(
         const std::unique_ptr<chat_user_context_t>& ctx, std::string& str);
+    void interpolate_raw_name(const std::unique_ptr<chat_user_context_t>& ctx,
+                              std::string& str);
     static packet_buffer_t write_packet(
         uint16_t type,
         const std::function<void(packet_buffer_t& buffer)>& writer);

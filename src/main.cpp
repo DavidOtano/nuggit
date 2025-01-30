@@ -15,6 +15,7 @@ using ng::logging::error, ng::logging::info;
 using namespace ng::wpn;
 
 typedef std::vector<std::shared_ptr<ng::ng_service>> ng_services;
+std::string config_path = "config.ini";
 
 /* forward declarations */
 static std::string ng_version_string(void);
@@ -28,7 +29,6 @@ int ng_run(const ng_services& services);
 bool ng_use_timestamps = true;
 
 int main(int argc, char** argv) {
-    std::string config_path = "config.ini";
     if (!ng_init(argc, argv, config_path)) {
         return 0;
     }

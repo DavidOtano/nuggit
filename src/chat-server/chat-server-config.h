@@ -2,10 +2,12 @@
 #define SERVER_CONFIG_H
 
 #include <vector>
+#include <sstream>
 
 #define section_parser_pair std::make_pair<std::string, section_parser*>
 
 #include "../ini-parser.h"
+#include "string-utils.h"
 
 namespace ng::config::chat_server {
 using namespace ng::plaintext;
@@ -14,11 +16,16 @@ class chat_server_section : public section_parser {
 public:
     chat_server_section() : m_limit(60) {}
 
-    void parse(const std::string& key, const std::string& value);
+    void parse(const std::string& key, const std::string& value) override;
+    void reset() override {
+        m_channelnames.clear();
+        m_topics.clear();
+        m_motd.clear();
+    }
     const std::vector<std::string>& channelnames() const {
         return m_channelnames;
     }
-    const std::string topic() const { return m_topic; }
+    const std::vector<std::string>& topics() const { return m_topics; }
     const std::vector<std::string>& motd() const { return m_motd; }
     int limit() const { return m_limit; }
     bool show_chat_history() const { return m_show_chat_history; }
@@ -42,10 +49,40 @@ public:
         return m_private_message_send_format;
     }
     const std::string& opmsg_format() const { return m_opmsg_format; }
+    bool rename_notification() const { return m_rename_notification; }
+    const std::string& rename_notification_format() const {
+        return m_rename_notification_format;
+    }
+    const std::string& external_ip_resolution_url() const {
+        return m_external_ip_resolution_url;
+    }
+    void set_topic(const std::string& topic, int topic_index) {
+        while (topic_index > m_topics.size()) {
+            m_topics.emplace_back();
+        }
+
+        m_topics[topic_index] = topic;
+    }
+    void set_motd(const std::string& motd) {
+        m_motd.clear();
+        add_motd(motd);
+    }
+    void add_motd(const std::string& motd) {
+        using ng::string::utils::replace;
+        auto copy = motd;
+        replace(copy, "#\n#", "\n");
+        replace(copy, "\\n", "\n");
+        std::string line;
+        std::stringstream ss(copy);
+        while (std::getline(ss, line)) {
+            m_motd.emplace_back(line);
+        }
+    }
+    void set_limit(int limit) { m_limit = limit; }
 
 private:
     std::vector<std::string> m_channelnames;
-    std::string m_topic;
+    std::vector<std::string> m_topics;
     std::vector<std::string> m_motd;
     int m_limit;
     bool m_show_chat_history;
@@ -57,6 +94,9 @@ private:
     std::string m_private_message_recv_format;
     std::string m_private_message_send_format;
     std::string m_opmsg_format;
+    bool m_rename_notification;
+    std::string m_rename_notification_format;
+    std::string m_external_ip_resolution_url;
 };
 
 class chat_server_login_section : public section_parser {
@@ -66,7 +106,12 @@ public:
         std::string access;
         std::string format;
     } login_info;
-    void parse(const std::string& key, const std::string& value);
+    void parse(const std::string& key, const std::string& value) override;
+    void reset() override {
+        m_logins.clear();
+        m_current_login = {.password = "", .access = "", .format = ""};
+    }
+
     const std::vector<login_info>& logins() const { return m_logins; }
     const std::string& default_access() const { return m_default_access; }
     const std::string& default_format() const { return m_default_format; }

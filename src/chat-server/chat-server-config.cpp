@@ -5,11 +5,17 @@
 void ng::config::chat_server::chat_server_section::parse(
     const std::string& key, const std::string& value) {
     if (key == "ChannelName") {
-        m_channelnames.push_back(value);
+        if (m_channelnames.size() == 3) {
+            return;
+        }
+        m_channelnames.emplace_back(value);
     } else if (key == "Topic") {
-        m_topic = value;
+        if (m_topics.size() == 3) {
+            return;
+        }
+        m_topics.emplace_back(value);
     } else if (key == "Motd") {
-        m_motd.push_back(value);
+        m_motd.emplace_back(value);
     } else if (key == "Limit") {
         m_limit = std::stoi(value);
     } else if (key == "ShowChatHistoryOnEntry") {
@@ -30,6 +36,12 @@ void ng::config::chat_server::chat_server_section::parse(
         m_private_message_send_format = value;
     } else if (key == "OpMsgFormat") {
         m_opmsg_format = value;
+    } else if (key == "RenameNotification") {
+        m_rename_notification = get_bool_from_string_value(value);
+    } else if (key == "RenameNotificationFormat") {
+        m_rename_notification_format = value;
+    } else if (key == "ExternalIPResolutionUrl") {
+        m_external_ip_resolution_url = value;
     } else {
         throw ini_parser_exception(std::format("invalid server key '{}'", key));
     }
@@ -55,7 +67,7 @@ void ng::config::chat_server::chat_server_login_section::parse(
 
     if (!m_current_login.password.empty() && !m_current_login.access.empty() &&
         !m_current_login.format.empty()) {
-        m_logins.push_back(m_current_login);
+        m_logins.emplace_back(m_current_login);
         m_current_login = {.password = "", .access = "", .format = ""};
     }
 }

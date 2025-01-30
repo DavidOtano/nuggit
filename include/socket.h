@@ -15,9 +15,22 @@ public:
         m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     }
 
-    tcp_socket(SOCKET s) noexcept : m_socket(s), m_closed(false), m_blocking(true) {}
+    tcp_socket(SOCKET s) noexcept
+        : m_socket(s), m_closed(false), m_blocking(true) {}
     tcp_socket(tcp_socket&& s) noexcept : tcp_socket(s.m_socket) {}
-    tcp_socket(tcp_socket& s) noexcept : m_socket(s.m_socket), m_closed(s.m_closed), m_blocking(true) {}
+    tcp_socket(tcp_socket& s) noexcept
+        : m_socket(s.m_socket), m_closed(s.m_closed), m_blocking(true) {}
+
+    [[nodiscard]] virtual bool connect(const std::string& ip,
+                                       uint16_t port) const {
+        auto ip_addr = ip_to_uint(ip);
+        SOCKADDR_IN sin;
+        sin.sin_family = AF_INET;
+        sin.sin_port = htons(port);
+        sin.sin_addr.S_un.S_addr = ip_addr;
+        return ::connect(m_socket, (struct sockaddr*)&sin, sizeof sin) !=
+               SOCKET_ERROR;
+    }
 
     [[nodiscard]] virtual bool is_valid() const {
         return m_socket != INVALID_SOCKET;
@@ -43,7 +56,7 @@ public:
         sin.sin_port = htons(port);
         sin.sin_family = AF_INET;
 
-        return ::bind(m_socket, (struct sockaddr*)&sin, sizeof(SOCKADDR_IN)) !=
+        return ::bind(m_socket, (struct sockaddr*)&sin, sizeof sin) !=
                SOCKET_ERROR;
     }
 
@@ -55,10 +68,14 @@ public:
 #if defined(_WIN32) || defined(_WIN64)
         unsigned long arg = blocking ? 0 : 1;
         auto result = ::ioctlsocket(m_socket, FIONBIO, &arg) != SOCKET_ERROR;
-        if (result) m_blocking = blocking;
+        if (result) {
+            m_blocking = blocking;
+        }
 #else
         int flags = fcntl(m_socket, F_GETFL, 0);
-        if (flags == SOCKET_ERROR) return false;
+        if (flags == SOCKET_ERROR) {
+            return false;
+        }
 
         if (blocking) {
             flags &= ~O_NONBLOCK;
@@ -67,7 +84,9 @@ public:
         }
 
         auto result = fcntl(m_socket, F_SETFL, flags) != SOCKET_ERROR;
-        if (result) m_blocking = blocking;
+        if (result) {
+            m_blocking = blocking;
+        }
 #endif
         return result;
     }
@@ -77,7 +96,9 @@ public:
     }
 
     virtual bool close() {
-        if (m_closed || m_socket == INVALID_SOCKET) return 0;
+        if (m_closed || m_socket == INVALID_SOCKET) {
+            return 0;
+        }
         bool result = m_closed = ::closesocket(m_socket) != SOCKET_ERROR;
         return result;
     }
@@ -93,7 +114,7 @@ public:
 
         SOCKADDR_IN sin = {};
         socklen_t sin_size;
-        sin_size = sizeof(struct sockaddr_in);
+        sin_size = sizeof sin;
 
         if (::getpeername(m_socket, (struct sockaddr*)&sin, &sin_size) ==
             SOCKET_ERROR) {
@@ -127,7 +148,9 @@ protected:
     static void initialize() {
 #if defined(_WIN32) || defined(_WIN64)
         static bool initialized = false;
-        if (initialized) return;
+        if (initialized) {
+            return;
+        }
 
         WSADATA data;
         initialized = ::WSAStartup(MAKEWORD(2, 2), &data) == 0;

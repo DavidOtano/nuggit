@@ -15,6 +15,7 @@ public:
 class section_parser {
 public:
     virtual void parse(const std::string& key, const std::string& value) = 0;
+    virtual void reset() = 0;
 
 protected:
     static bool get_bool_from_string_value(const std::string& value);
