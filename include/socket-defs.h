@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <netdb.h>
 
 #define INVALID_SOCKET (~0)
 #define SOCKET_ERROR (-1)

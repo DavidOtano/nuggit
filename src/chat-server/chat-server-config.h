@@ -60,7 +60,7 @@ public:
     const std::string& country_resolver_url() const {
         return m_country_resolver_url;
     }
-    void set_topic(const std::string& topic, int topic_index) {
+    void set_topic(const std::string& topic, size_t topic_index) {
         while (topic_index > m_topics.size()) {
             m_topics.emplace_back();
         }

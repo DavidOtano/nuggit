@@ -129,7 +129,7 @@ protected:
     void handle_logout_command(const std::unique_ptr<chat_user_context_t>& ctx);
     void handle_channelname_command(
         const std::unique_ptr<chat_user_context_t>& ctx,
-        const std::string& command, int channel_index);
+        const std::string& command, size_t channel_index);
     void handle_bot_command(const std::unique_ptr<chat_user_context_t>& ctx);
     void handle_topic_command(const std::unique_ptr<chat_user_context_t>& ctx,
                               const std::string& command, int topic_index);

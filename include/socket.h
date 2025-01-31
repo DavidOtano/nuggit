@@ -27,7 +27,11 @@ public:
         SOCKADDR_IN sin;
         sin.sin_family = AF_INET;
         sin.sin_port = htons(port);
+#if defined(_WIN32) || defined(_WIN64)
         sin.sin_addr.S_un.S_addr = ip_addr;
+#else
+        sin.sin_addr.s_addr = ip_addr;
+#endif
         return ::connect(m_socket, (struct sockaddr*)&sin, sizeof sin) !=
                SOCKET_ERROR;
     }

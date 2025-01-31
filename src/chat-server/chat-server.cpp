@@ -23,6 +23,8 @@
 #include "../crypt/wpn_crypt.h"
 #include "semver.h"
 
+extern std::string config_path;
+
 namespace ng::wpn::chat {
 
 #define MAX_RECEIVE_BUFFER_SZ 1024
@@ -145,7 +147,7 @@ using namespace ng::logging;
     }
 
 static uint64_t get_system_uptime_seconds() {
-    uint64_t seconds;
+    uint64_t seconds = 0;
 
 #if defined(_WIN32) || defined(_WIN64)
     seconds = GetTickCount64() / 1000;
@@ -1769,7 +1771,7 @@ void chat_server::handle_bot_command(
 
 void chat_server::handle_channelname_command(
     const std::unique_ptr<chat_user_context_t>& ctx, const std::string& command,
-    int channel_index) {
+    size_t channel_index) {
     const auto& channelnames = m_nuggit_config.chat_server().channelnames();
 
     assert_command_input(ctx, channel_index <= channelnames.size());
@@ -1861,7 +1863,6 @@ void chat_server::handle_reload_command(
         return;
     }
 
-    extern std::string config_path;
     if (!m_nuggit_config.load(config_path)) {
         warn("unable to load the config file...");
         echo(ctx, "Unable to load the config file");
@@ -1994,7 +1995,7 @@ std::future<country_result> chat_server::resolve_country(
         const auto res = std::visit(
             response_visitor{
                 [](const success_response& r) -> std::string { return r.text; },
-                [](const error_response&) -> std::string { return "unknown"; },
+                [](const error_response&) -> std::string { return "N/A"; },
             },
             resp);
 

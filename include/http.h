@@ -7,7 +7,7 @@
 namespace ng::web::http {
 
 struct error_response {
-    int status_code;
+    long status_code;
     std::string text;
 };
 
