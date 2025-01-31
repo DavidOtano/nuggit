@@ -70,7 +70,11 @@ static void extract_ip_range(const std::string& ip_range, std::string& from,
     }
 }
 
-static std::future<std::string> resolve_hostname(const std::string& ip) {
+struct hostname_result {
+    std::string hostname;
+};
+
+static std::future<hostname_result> resolve_hostname(const std::string& ip) {
     return std::async(std::launch::async, [&ip]() {
         std::string hostname;
         hostname.resize(NI_MAXHOST);
@@ -81,7 +85,7 @@ static std::future<std::string> resolve_hostname(const std::string& ip) {
         getnameinfo((struct sockaddr*)&sa, sizeof sa, &hostname[0], NI_MAXHOST,
                     nullptr, 0, 0);
         hostname.resize(hostname.find('\0'));
-        return hostname;
+        return hostname_result{hostname};
     });
 }
 

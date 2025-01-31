@@ -16,8 +16,12 @@ namespace ng::wpn::chat {
 using namespace wpn::proto;
 
 template <class... Ts>
-struct hostname_visitor : Ts... {
+struct join_state_visitor : Ts... {
     using Ts::operator()...;
+};
+
+struct country_result {
+    std::string country;
 };
 
 struct primary_info_t {
@@ -86,6 +90,7 @@ struct chat_user_context_t {
     packet_buffer_t send_buffer;
     std::string ip;
     std::string hostname;
+    std::string country;
     bool is353;
     bool is_shutdown;
     timer disconnect_after;
@@ -101,7 +106,9 @@ struct chat_user_context_t {
     std::string client_name;
     std::string client_version;
     bool ipsend_enabled;
-    std::variant<std::monostate, std::future<std::string>> hostname_state;
+    std::variant<std::monostate, std::future<hostname_result>,
+                 std::future<country_result>>
+        join_state;
 
     bool has_access(char access_character) const {
         if (access_character != '+' && access_character != '@' &&

@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <future>
 #include <iomanip>
 #include <sstream>
+#include "chat-user.h"
 #if defined(_WIN32) || defined(_WIN64)
 #include <winerror.h>
 #endif
@@ -758,7 +760,7 @@ void chat_server::notify_join_request_accepted(
 
 bool chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
     return std::visit(
-        hostname_visitor{
+        join_state_visitor{
             [&](std::monostate&) {
                 ctx->recv_buffer.skip_header();
                 ctx->recv_buffer.scan("SWDWDS", ctx->info.channelname,
@@ -804,20 +806,30 @@ bool chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
                 echof(ctx, "This channel is powered by nuggit {}",
                       get_version_string());
 
-                echof(ctx, "{}Please wait... Resolving your hostname...",
-                      COL(2));
-
-                ctx->hostname_state = resolve_hostname(ctx->ip);
+                echof(ctx, "{}Resolving {}country...", COL(2), COL(2));
+                ctx->join_state = resolve_country(ctx->ip);
 
                 return false;
             },
-            [&](std::future<std::string>& fut) {
+            [&](std::future<country_result>& fut) {
                 if (fut.wait_for(std::chrono::seconds(0)) !=
                     std::future_status::ready) {
                     return false;
                 }
 
-                ctx->hostname = fut.get();
+                ctx->country = fut.get().country;
+
+                echof(ctx, "{}Resolving {}hostname...", COL(2), COL(2));
+                ctx->join_state = resolve_hostname(ctx->ip);
+                return false;
+            },
+            [&](std::future<hostname_result>& fut) {
+                if (fut.wait_for(std::chrono::seconds(0)) !=
+                    std::future_status::ready) {
+                    return false;
+                }
+
+                ctx->hostname = fut.get().hostname;
 
                 notify_topic(ctx);
                 notify_motd(ctx);
@@ -845,7 +857,7 @@ bool chat_server::handle_join(const std::unique_ptr<chat_user_context_t>& ctx) {
 
                 return true;
             }},
-        ctx->hostname_state);
+        ctx->join_state);
 }
 
 void chat_server::handle_message(
@@ -1939,6 +1951,70 @@ bool chat_server::is_invalid_command_input(
     return false;
 }
 
+const std::string& chat_server::resolve_external_ip() {
+    using namespace ng::web::http;
+
+    if (m_external_ip.empty() || m_resolver_interval.has_elapsed()) {
+        const auto resp = simple_get(
+            m_nuggit_config.chat_server().external_ip_resolution_url());
+
+        m_external_ip = std::visit(
+            response_visitor{[](const success_response& r) -> std::string {
+                                 info("resolved external ip ({})", r.text);
+                                 return r.text;
+                             },
+                             [](const error_response&) -> std::string {
+                                 warn("unable to resolve external ip. :-(");
+                                 return "127.0.0.1";
+                             }},
+            resp);
+
+        m_resolver_interval.reset();
+    }
+
+    return m_external_ip;
+}
+
+std::future<country_result> chat_server::resolve_country(
+    const std::string& ip) {
+    if (!m_nuggit_config.chat_server().resolve_countries()) {
+        std::promise<country_result> res;
+        res.set_value(country_result{""});
+        return res.get_future();
+    }
+
+    return std::async(std::launch::async, [&]() -> country_result {
+        using ng::string::utils::replace;
+        using namespace ng::web::http;
+
+        auto country_url = m_nuggit_config.chat_server().country_resolver_url();
+        replace(country_url, "$IP$", ip);
+        const auto resp = simple_get(country_url);
+
+        const auto res = std::visit(
+            response_visitor{
+                [](const success_response& r) -> std::string { return r.text; },
+                [](const error_response&) -> std::string { return "unknown"; },
+            },
+            resp);
+
+        if (res.find(';') == std::string::npos) {
+            return country_result{res};
+        }
+
+        std::stringstream ss(res);
+        std::string country;
+
+        while (std::getline(ss, country, ';')) {
+            if (country.length() == 3) {
+                return country_result{country};
+            }
+        }
+
+        return country_result{country};
+    });
+}
+
 bool chat_server::validate_user(
     const std::unique_ptr<chat_user_context_t>& ctx) {
     if (!is_username_valid(ctx->info.username)) {
@@ -2027,6 +2103,7 @@ void chat_server::interpolate_motd_variables(
     replace(str, "$CHANNELIP$", resolve_external_ip());
     replace(str, "$CHANNELPORT$",
             std::to_string(m_nuggit_config.nuggit().tcp_port()));
+    replace(str, "$COUNTRY$", ctx->country);
 }
 
 packet_buffer_t chat_server::write_packet(
@@ -2037,30 +2114,6 @@ packet_buffer_t chat_server::write_packet(
     writer(scratch_buffer);
     scratch_buffer.write_header(type);
     return scratch_buffer;
-}
-
-const std::string& chat_server::resolve_external_ip() {
-    using namespace ng::web::http;
-
-    if (m_external_ip.empty() || m_resolver_interval.has_elapsed()) {
-        auto resp = simple_get(
-            m_nuggit_config.chat_server().external_ip_resolution_url());
-
-        m_external_ip = std::visit(
-            response_visitor{[&](success_response& r) -> std::string {
-                                 info("resolved external ip ({})", r.text);
-                                 return r.text;
-                             },
-                             [](error_response&) -> std::string {
-                                 warn("unable to resolve external ip. :-(");
-                                 return "127.0.0.1";
-                             }},
-            resp);
-
-        m_resolver_interval.reset();
-    }
-
-    return m_external_ip;
 }
 
 chat_server::~chat_server() {}

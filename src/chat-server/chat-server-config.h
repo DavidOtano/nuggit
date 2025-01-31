@@ -56,6 +56,10 @@ public:
     const std::string& external_ip_resolution_url() const {
         return m_external_ip_resolution_url;
     }
+    bool resolve_countries() const { return m_resolve_countries; }
+    const std::string& country_resolver_url() const {
+        return m_country_resolver_url;
+    }
     void set_topic(const std::string& topic, int topic_index) {
         while (topic_index > m_topics.size()) {
             m_topics.emplace_back();
@@ -97,6 +101,8 @@ private:
     bool m_rename_notification;
     std::string m_rename_notification_format;
     std::string m_external_ip_resolution_url;
+    bool m_resolve_countries;
+    std::string m_country_resolver_url;
 };
 
 class chat_server_login_section : public section_parser {

@@ -157,6 +157,7 @@ protected:
         const std::unique_ptr<chat_user_context_t>& ctx,
         const std::string& command);
     const std::string& resolve_external_ip();
+    std::future<country_result> resolve_country(const std::string& ip);
 
     static bool is_username_valid(const std::string& username);
     static bool is_channelname_valid(const std::string& channelname);

@@ -42,6 +42,10 @@ void ng::config::chat_server::chat_server_section::parse(
         m_rename_notification_format = value;
     } else if (key == "ExternalIPResolutionUrl") {
         m_external_ip_resolution_url = value;
+    } else if (key == "ResolveCountries") {
+        m_resolve_countries = get_bool_from_string_value(value);
+    } else if (key == "CountryResolverUrl") {
+        m_country_resolver_url = value;
     } else {
         throw ini_parser_exception(std::format("invalid server key '{}'", key));
     }
