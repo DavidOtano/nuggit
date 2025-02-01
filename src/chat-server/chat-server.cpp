@@ -549,7 +549,7 @@ void chat_server::notify_chat_history(
     }
 
     for (const auto& message : m_chat_history) {
-        echo_clr(ctx, message);
+        echo(ctx, message);
     }
 
     auto footer = m_nuggit_config.chat_server().chat_history_footer();
@@ -604,6 +604,11 @@ void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
         replace(formatted_join_string_ip, "$LINE$",
                 util::get_line_type(ctx->info.line_type));
         replace(formatted_join_string_ip, "$IP$", ctx->ip);
+        formatted_join_string = format_colorful_string(formatted_join_string);
+        formatted_join_string_ip =
+            format_colorful_string(formatted_join_string_ip);
+        interpolate_raw_name(ctx, formatted_join_string);
+        interpolate_raw_name(ctx, formatted_join_string_ip);
     } else {
         formatted_join_string = std::format(
             "{}{} {}({} {} files) has entered", COL(4), ctx->info.username,
@@ -623,9 +628,9 @@ void chat_server::notify_join(const std::unique_ptr<chat_user_context_t>& ctx) {
                 ctx->info.line_type, ctx->info.files, ctx->rank());
 
             if (!user->has_access('I')) {
-                echo_clr(user, formatted_join_string);
+                echo(user, formatted_join_string);
             } else {
-                echo_clr(user, formatted_join_string_ip);
+                echo(user, formatted_join_string_ip);
             }
         } else if (!user->has_access('I') && user->is353) {
             enq(user, 0x0071, "SDWWDB", ctx->info.username,
@@ -869,6 +874,10 @@ void chat_server::handle_message(
 
     /* if no message was passed in, retrieve it from the packet */
     if (message.empty()) {
+        if (ctx->recv_buffer.type() != 0x1450) {
+            return;
+        }
+
         ctx->recv_buffer.skip_header();
         ctx->recv_buffer.scan("S", message);
         message = message.substr(0, ctx->recv_buffer.length());
@@ -915,7 +924,7 @@ void chat_server::handle_message(
     std::string formatted = ctx->format;
     interpolate_name(ctx, formatted);
     replace(formatted, "$TEXT$", message);
-    append_chat_history(formatted);
+    append_chat_history(format_colorful_string(formatted));
 
     for (const auto& user : m_chat_users) {
         if (!logged_in(user)) {
@@ -1722,6 +1731,7 @@ void chat_server::handle_stats_command(
         echo(ctx, std::format("Channelname: {}", user->info.channelname));
         echo(ctx, std::format("IP address: {}", user->ip));
         echo(ctx, std::format("Hostname: {}", user->hostname));
+        echo(ctx, std::format("Country: {}", user->country));
         echo(ctx, std::format("Access: {}", user->access));
         echo(ctx, std::format("Files: {}", user->info.files));
         echo(ctx, std::format("Total messages: {}", user->message_count));
@@ -1884,7 +1894,7 @@ void chat_server::handle_who_command(
     }
 
     echo_clr(ctx,
-             "#c6#Users #c6#urrently in the channel: "
+             "Users urrently in the channel: "
              "#c1#3.53#c6#/#c2#3.31#c6#/#c3#Bot#c6#/#c9#Hidden");
     for (const auto& user : m_chat_users) {
         echof(ctx, "{}{} [{}] ({})",
@@ -1894,7 +1904,7 @@ void chat_server::handle_who_command(
                                       : COL(1),
               user->info.username, user->ip, user->access);
     }
-    echo_clr(ctx, "#c6#End #c6#of users list.");
+    echo_clr(ctx, "End of users list.");
 }
 
 bool chat_server::check_access(const std::unique_ptr<chat_user_context_t>& ctx,

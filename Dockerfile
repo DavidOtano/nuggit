@@ -27,7 +27,7 @@ ADD . /nuggit
 WORKDIR /nuggit
 RUN rm -rf .xmake
 RUN xmake config -m release -y
-RUN xmake
+RUN xmake -j4
 RUN mkdir /var/nuggit
 RUN cat /nuggit/config.ini | sed 's/\r//g' > /var/nuggit/config.ini
 RUN cp /nuggit/build/nuggit /usr/bin/nuggit
