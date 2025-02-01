@@ -15,26 +15,24 @@ using ng::logging::error, ng::logging::info;
 using namespace ng::wpn;
 
 typedef std::vector<std::shared_ptr<ng::ng_service>> ng_services;
-std::string config_path = "config.ini";
 
 /* forward declarations */
 static std::string ng_version_string(void);
 bool configure_services(ng::nuggit_config_reader& config,
                         ng_services& services);
-bool load_config(const std::string config_path,
-                 ng::nuggit_config_reader& config);
-bool ng_init(int argc, char** argv, std::string& config_path);
+bool load_config(ng::nuggit_config_reader& config);
+bool ng_init(int argc, char** argv);
 int ng_run(const ng_services& services);
 
 bool ng_use_timestamps = true;
 
 int main(int argc, char** argv) {
-    if (!ng_init(argc, argv, config_path)) {
+    if (!ng_init(argc, argv)) {
         return 0;
     }
 
     ng::nuggit_config_reader config;
-    if (!load_config(config_path, config)) {
+    if (!load_config(config)) {
         return -1;
     }
 
@@ -76,10 +74,9 @@ bool configure_services(ng::nuggit_config_reader& config,
     return true;
 }
 
-bool load_config(const std::string config_path,
-                 ng::nuggit_config_reader& config) {
+bool load_config(ng::nuggit_config_reader& config) {
     try {
-        if (!config.load(config_path)) {
+        if (!config.load()) {
             error("unable to load the config...");
             return false;
         }
@@ -94,7 +91,7 @@ bool load_config(const std::string config_path,
     return true;
 }
 
-bool ng_init(int argc, char** argv, std::string& config_path) {
+bool ng_init(int argc, char** argv) {
     using ng::string::utils::to_lower, ng::string::utils::trim;
 
     bool no_logo = false;
@@ -102,10 +99,7 @@ bool ng_init(int argc, char** argv, std::string& config_path) {
         std::string arg = argv[i];
         arg = to_lower(trim(arg));
 
-        if (arg.starts_with("--config=")) {
-            config_path = arg.substr(9);
-            continue;
-        } else if (arg == "--no-logo") {
+        if (arg == "--no-logo") {
             no_logo = true;
             continue;
         } else if (arg == "--no-timestamps") {

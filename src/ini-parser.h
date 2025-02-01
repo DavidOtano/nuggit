@@ -1,10 +1,12 @@
 #ifndef NG_INI_PARSER_H
 #define NG_INI_PARSER_H
 
-#include <fstream>
 #include <map>
+#include <fstream>
+#include <filesystem>
 
 namespace ng::plaintext {
+namespace fs = std::filesystem;
 
 class ini_parser_exception : public std::runtime_error {
 public:
@@ -33,7 +35,7 @@ public:
     ini_parser_base(ini_parser_base&& parser) noexcept
         : section_parser_map_(std::move(parser.section_parser_map_)),
           m_loaded(false) {}
-    [[nodiscard]] virtual bool load(const std::string& filename);
+    [[nodiscard]] virtual bool load(const fs::path& ini_path);
     [[nodiscard]] bool loaded() const { return m_loaded; }
 
 protected:

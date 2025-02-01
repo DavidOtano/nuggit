@@ -1,6 +1,7 @@
 #ifndef NG_NUGGIT_CONFIG_H
 #define NG_NUGGIT_CONFIG_H
 
+#include "config.h"
 #include "ini-parser.h"
 #include "chat-server/chat-server-config.h"
 
@@ -41,6 +42,11 @@ public:
     const ng::config::chat_server::chat_server_login_section&
     chat_server_login() const {
         return m_chat_server_login_section;
+    }
+
+    using ini_parser_base::load;
+    [[nodiscard]] bool load() {
+        return ini_parser_base::load(get_config_file_path("config.ini"));
     }
 
 private:

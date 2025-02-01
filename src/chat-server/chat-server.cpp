@@ -4,6 +4,7 @@
 #include <future>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 #include "chat-user.h"
 #if defined(_WIN32) || defined(_WIN64)
 #include <winerror.h>
@@ -22,8 +23,6 @@
 #include "../nuggit-config.h"
 #include "../crypt/wpn_crypt.h"
 #include "semver.h"
-
-extern std::string config_path;
 
 namespace ng::wpn::chat {
 
@@ -1863,10 +1862,16 @@ void chat_server::handle_reload_command(
         return;
     }
 
-    if (!m_nuggit_config.load(config_path)) {
-        warn("unable to load the config file...");
-        echo(ctx, "Unable to load the config file");
-        return;
+    try {
+        if (!m_nuggit_config.load()) {
+            warn("unable to load the config file...");
+            echo(ctx, "Unable to load the config file");
+            return;
+        }
+    } catch (std::runtime_error& e) {
+        const auto what = e.what();
+        error("unable to load config: {}", what);
+        echof(ctx, "[error] unable to load the config: {}", what);
     }
 
     echo(ctx, "Config reloaded.");

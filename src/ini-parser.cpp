@@ -37,9 +37,9 @@ bool section_parser::get_bool_from_string_value(const std::string& value) {
                            : false;
 }
 
-[[nodiscard]] bool ini_parser_base::load(const std::string& filename) {
+[[nodiscard]] bool ini_parser_base::load(const fs::path& ini_path) {
     using logging::error, logging::get_error_message;
-    std::ifstream file(filename);
+    std::ifstream file(ini_path);
 
     const auto notify_error = [](const std::string& message) {
         error("unable to load the config file: {}", message);

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -10,6 +11,7 @@
 #include "logging.h"
 #include "macro_utils.h"
 #include "socket-defs.h"
+#include "../config.h"
 
 namespace ng::wpn::chat {
 enum ban_type { BT_USER_IP = 0, BT_USER_PARTIAL, BT_IP, BT_IP_RANGE };
@@ -144,13 +146,11 @@ struct ban_control {
         });
     }
 
-    void clear() {
-        bans.clear();
-    }
+    void clear() { bans.clear(); }
 
     bool save() {
         using ng::logging::error, ng::logging::get_error_message;
-        std::ofstream banlist("banlist.conf");
+        std::ofstream banlist(get_config_file_path("banlist.conf"));
 
         if (!banlist.is_open()) {
             error("failed to save the banlist. {}", get_error_message(errno));
@@ -189,8 +189,7 @@ struct ban_control {
     }
 
     bool load() {
-        std::ifstream banlist("banlist.conf");
-
+        std::ifstream banlist(get_config_file_path("banlist.conf"));
         if (!banlist.is_open()) {
             return false;
         }

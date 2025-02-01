@@ -8,7 +8,8 @@ namespace ng::web::http {
 
 struct error_response {
     long status_code;
-    std::string text;
+    cpr::ErrorCode error_code;
+    std::string error_message;
 };
 
 struct success_response {
@@ -29,7 +30,8 @@ static const std::variant<success_response, error_response> simple_get(
     }
 
     return error_response{.status_code = response.status_code,
-                          .text = response.text};
+                          .error_code = response.error.code,
+                          .error_message = response.error.message};
 }
 
 }  // namespace ng::web::http
