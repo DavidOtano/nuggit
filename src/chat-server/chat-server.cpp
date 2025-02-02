@@ -18,7 +18,7 @@
 #include "http.h"
 #include "string-utils.h"
 #include "deferred-exec.h"
-#include "macro_utils.h"
+#include "macro-utils.h"
 #include "socket-defs.h"
 #include "../nuggit-config.h"
 #include "../crypt/wpn_crypt.h"
@@ -27,7 +27,6 @@
 namespace ng::wpn::chat {
 
 #define MAX_RECEIVE_BUFFER_SZ 1024
-#define STORED_MESSAGE_COUNT 10
 #define LOGIN_TTL 10
 
 using namespace ng::wpn::proto;
@@ -235,8 +234,7 @@ static std::string get_channel_hash(const std::string& ip, uint16_t port) {
     std::ostringstream stream;
     stream << std::hex << std::uppercase << std::setw(8) << std::setfill('0')
            << ip_to_uint(ip);
-    stream << std::hex << std::uppercase << std::setw(4) << std::setfill('0')
-           << port;
+    stream << std::setw(4) << std::setfill('0') << port;
     return stream.str();
 }
 
@@ -407,7 +405,6 @@ bool chat_server::handle_packet(
     if (ctx->recv_buffer.type() == 0x9905) {
         ctx->recv_buffer.skip_header();
         ctx->recv_buffer.scan("SS", ctx->client_name, ctx->client_version);
-        ctx->recv_buffer.skip_front();
         return true;
     }
 
@@ -533,17 +530,22 @@ void chat_server::notify_motd(const std::unique_ptr<chat_user_context_t>& ctx) {
 
 void chat_server::notify_chat_history(
     const std::unique_ptr<chat_user_context_t>& ctx) {
+    using ng::string::utils::replace;
     if (!m_nuggit_config.chat_server().show_chat_history() ||
         !m_chat_history.size()) {
         return;
     }
 
     auto header = m_nuggit_config.chat_server().chat_history_header();
+    auto length = m_nuggit_config.chat_server().chat_history_length();
+    auto count = m_chat_history.size();
     if (!header.empty()) {
         std::string line;
         std::stringstream ss(header);
 
         while (std::getline(ss, line)) {
+            replace(line, "$LENGTH$", std::to_string(length));
+            replace(line, "$COUNT$", std::to_string(count));
             echo_clr(ctx, line);
         }
     }
@@ -558,6 +560,8 @@ void chat_server::notify_chat_history(
         std::stringstream ss(footer);
 
         while (std::getline(ss, line)) {
+            replace(line, "$LENGTH$", std::to_string(length));
+            replace(line, "$COUNT$", std::to_string(count));
             echo_clr(ctx, line);
         }
     }
@@ -1118,6 +1122,8 @@ void chat_server::handle_command(
         handle_reload_command(ctx);
     } else if (cmd == "/who") {
         handle_who_command(ctx);
+    } else if (cmd == "/clearhistory") {
+        handle_clearhistory_command(ctx);
     } else if (!suppress_invalid) {
         echo(ctx, "Invalid command.");
     }
@@ -1907,6 +1913,16 @@ void chat_server::handle_who_command(
     echo_clr(ctx, "End of users list.");
 }
 
+void chat_server::handle_clearhistory_command(
+    const std::unique_ptr<chat_user_context_t>& ctx) {
+    if (!check_access(ctx, "*")) {
+        return;
+    }
+
+    m_chat_history.clear();
+    echo(ctx, "Chat history cleared.");
+}
+
 bool chat_server::check_access(const std::unique_ptr<chat_user_context_t>& ctx,
                                const std::string& access) {
     if (std::any_of(access.begin(), access.end(),
@@ -1948,9 +1964,9 @@ void chat_server::append_chat_history(const std::string& message) {
         return;
     }
 
-    m_chat_history.push_back(message);
-
-    while (m_chat_history.size() > STORED_MESSAGE_COUNT) {
+    m_chat_history.emplace_back(message);
+    const size_t length = m_nuggit_config.chat_server().chat_history_length();
+    while (m_chat_history.size() > length) {
         m_chat_history.erase(m_chat_history.begin());
     }
 }

@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 #include <timer.h>
-#include "wpn_util.h"
+#include "wpn-util.h"
 #include "../nuggit-service.h"
 
 namespace ng::wpn::peer {

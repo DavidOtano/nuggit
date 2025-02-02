@@ -2,7 +2,7 @@
 #define NG_WPN_UTIL_H
 
 #include <string>
-#include "peer_types.h"
+#include "peer-types.h"
 
 namespace ng::wpn::util {
 

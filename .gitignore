@@ -5,3 +5,4 @@ build/
 vsxmake*/
 compile_commands.json
 .luarc.json
+include/semver.h

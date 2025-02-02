@@ -7,7 +7,7 @@
 #endif
 #include "logging.h"
 #include "../crypt/wpn_crypt.h"
-#include "peer_types.h"
+#include "peer-types.h"
 #include "socket.h"
 
 namespace ng::wpn::peer {
@@ -104,7 +104,8 @@ void handshake_server::enqueue(SOCKET s) {
         return;
     }
 
-    const auto& context = m_pending.emplace_back(std::make_unique<handshake_context_t>());
+    const auto& context =
+        m_pending.emplace_back(std::make_unique<handshake_context_t>());
     context->timeout = m_timeout;
     context->s = sock;
     context->sent = 0;

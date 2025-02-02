@@ -142,6 +142,9 @@ protected:
                               const std::string& command);
     void handle_reload_command(const std::unique_ptr<chat_user_context_t>& ctx);
     void handle_who_command(const std::unique_ptr<chat_user_context_t>& ctx);
+    void handle_clearhistory_command(
+        const std::unique_ptr<chat_user_context_t>& ctx);
+
     void interpolate_motd_variables(
         const std::unique_ptr<chat_user_context_t>& ctx, std::string& str);
 

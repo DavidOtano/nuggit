@@ -35,6 +35,7 @@ public:
     const std::string& chat_history_footer() const {
         return m_chat_history_footer;
     }
+    int chat_history_length() const { return m_chat_history_length; }
     bool fancy_entry() const { return m_fancy_entry; }
     const std::string& fancy_entry_message() const {
         return m_fancy_entry_message;
@@ -92,6 +93,7 @@ private:
     bool m_show_chat_history;
     std::string m_chat_history_header;
     std::string m_chat_history_footer;
+    int m_chat_history_length;
     bool m_fancy_entry;
     std::string m_fancy_entry_message;
     std::string m_fancy_entry_message_ip;

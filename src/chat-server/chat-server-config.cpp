@@ -24,6 +24,15 @@ void ng::config::chat_server::chat_server_section::parse(
         m_chat_history_header = value;
     } else if (key == "ChatHistoryFooter") {
         m_chat_history_footer = value;
+    } else if (key == "ChatHistoryLength") {
+        m_chat_history_length = std::stoi(value);
+
+        if (m_chat_history_length < 0) {
+            m_chat_history_length = 0;
+        }
+        if (m_chat_history_length > 100) {
+            m_chat_history_length = 100;
+        }
     } else if (key == "FancyEntry") {
         m_fancy_entry = get_bool_from_string_value(value);
     } else if (key == "FancyEntryMessage") {

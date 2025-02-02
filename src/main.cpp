@@ -9,7 +9,7 @@
 #include "chat-server/chat-server.h"
 #include "nuggit-service.h"
 #include "peer/handshake.h"
-#include "peer/peer_types.h"
+#include "peer/peer-types.h"
 
 using ng::logging::error, ng::logging::info;
 using namespace ng::wpn;
